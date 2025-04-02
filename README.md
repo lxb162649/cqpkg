@@ -51,11 +51,11 @@ chmod +x patch-clone.sh update-clone.sh compile.sh upload.sh
 ### 第1步
 拉取龙蜥仓库某分支代码，拉取cq仓库主分支代码
 ```
-./update-clone.sh 包名 分支名 
+./update-clone.sh 包名 分支名 1
 ```
 拉取欧拉仓库某分支代码，拉取cq仓库主分支代码
 ```
-./update-clone.sh 包名 分支名 1
+./update-clone.sh 包名 分支名
 ```
 
 ### 第2步
