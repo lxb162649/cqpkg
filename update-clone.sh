@@ -1,65 +1,106 @@
 #!/bin/bash
-#### 功能：将龙蜥仓库的 rpm包 的指定分支拉下来并放到rpmbuild中
 
-## 参数1：要从龙蜥仓库克隆的包的名称
-## 参数2：包的分支(如果是a8.9，请省略)
+source "function.sh"
 
-## 使用方法：
-#  ./http.sh <包名> [分支名]     #版本是a8.9省略[分支名]
-## 示例：
-#  ./http.sh libxcb
-#  将拉去 libxcb a8.9分支的包，并放到rpmbuild目录下
-rm -rf rpmbuild
-rm -rf $1
+if [[ $1 == "-h" || $1 == "--help" ]]; then
+    cat << EOF
+功能1：将龙蜥或欧拉仓库的源码包的指定分支拉下来并放到 rpmbuild 中
+功能2：创建 yaml 文件，自动获取开源协议、上游、分支、顶级社区
+功能3：拉取对应 gitlab 仓库
 
-# 创建 rpmbuild 目录结构
-mkdir ~/rpmbuild/{BUILD,SOURCES,SPECS} -p
+参数1：要从龙蜥或欧拉仓库克隆的包的名称
+参数2：包的分支
 
-# 选择分支并且clone
-if [ -z "$3" ];then
-        if [ -z "$2" ];then
-                echo "缺少参数"
-                exit 1
-        fi
-        # 没有第三个参数拉取欧拉仓库
-        git clone -b $2 https://gitee.com/src-openeuler/$1.git
-else
-        # 有第三个参数拉取龙蜥仓库
-        git clone -b $2 https://gitee.com/src-anolis-os/$1.git   
+1.拉龙蜥仓库
+./update-clone.sh <包名> [分支名]
+示例：
+./update-clone.sh felix-scr a8.9
+将拉去龙蜥 felix-scr a8.9 分支的包，并放到 rpmbuild 目录下
+
+2.拉龙蜥仓库
+./update-clone.sh <包名> [分支名]
+示例：
+./update-clone.sh felix-scr openEuler-22.03-LTS-SP4
+将拉去欧拉 felix-scr openEuler-22.03-LTS-SP4 分支的包，并放到 rpmbuild 目录下
+EOF
+exit 0
 fi
 
+package_name=$1
+branch=$2
+
+if [ -z "$package_name" ];then
+    echo "缺少包名参数，缺少分支参数"
+    exit 1
+else
+	if [ -z "$branch" ];then
+		echo "缺少分支参数"
+		exit 1
+	fi
+fi
+
+# 删除原来的仓库
+rm -rf $package_name
+
+if [[ $branch =~ "openEuler" ]]; then
+    git clone -b $branch https://gitee.com/src-openeuler/$package_name.git
+else
+    git clone -b $branch https://gitee.com/src-anolis-os/$package_name.git 
+fi
+
+# 检查是否克隆成功
+CHECK_RESULT $? 0 0 "克隆失败，未找到对应仓库或分支" 
+
+# 删除原来的 rpmbuild 目录
+rm -rf rpmbuild
+
+# 创建 rpmbuild 目录结构
+mkdir rpmbuild/{BUILD,SOURCES,SPECS} -p
+
 # 将clone的代码移动到rpmbuild中
-mv $1/*.spec rpmbuild/SPECS/
-mv $1/* rpmbuild/SOURCES/
-rm $1/ -rf
+mv $package_name/*.spec rpmbuild/SPECS/
+mv $package_name/* rpmbuild/SOURCES/
+rm $package_name/ -rf
 
 # 创建SOURCEINFO.yaml文件，填入基本信息
 cd rpmbuild
 touch SOURCEINFO.yaml
+
+# 获取 spec 文件名
 cd ./SPECS
 spec_name=$(ls)
-cd ..
-url=$(awk '/^URL:/ {print $2}' "./SPECS/${spec_name}")
-if [ -z "${url}" ];then
-        url=$(awk '/^Url:/ {print $2}' "./SPECS/${spec_name}")
-fi
-name=$(awk '/^Name:/ {print $2}' "./SPECS/${spec_name}")
-license=`grep "License:" SPECS/*.spec | sed 's/License:[[:space:]]*//'`
-echo "license:" > "SOURCEINFO.yaml"
-echo "- ${license}" >> "SOURCEINFO.yaml"
 
+cd ..
+
+# 获取顶级上游地址
+url=$(awk '/^URL:/ {print $branch}' "./SPECS/${spec_name}")
+if [ -z "${url}" ];then
+    url=$(awk '/^Url:/ {print $branch}' "./SPECS/${spec_name}")
+fi
+
+# 获取开源协议
+license=`grep "License:" SPECS/*.spec | sed 's/License:[[:space:]]*//'`
+
+# 写入开源协议
+echo "license:" > "SOURCEINFO.yaml"
+echo "  - ${license}" >> "SOURCEINFO.yaml"
+
+# 写入上游社区
+echo "upstream:" >> "SOURCEINFO.yaml"
+if [[ $branch =~ "openEuler" ]]; then
+    echo "  src: https://gitee.com/src-openeuler/$package_name.git" >> "SOURCEINFO.yaml"
+else
+    echo "  src: https://gitee.com/src-anolis-os/$package_name.git" >> "SOURCEINFO.yaml"
+fi
+
+# 写入上游分支
+echo "  branch: $branch" >> "SOURCEINFO.yaml"
+
+# 写入顶级社区
 echo "origin:" >> "SOURCEINFO.yaml"
 echo "  src: ${url}" >> "SOURCEINFO.yaml"
 
-echo "upstream:" >> "SOURCEINFO.yaml"
-echo "  branch: $2" >> "SOURCEINFO.yaml"
+cd ..
 
-if [ -z "$3" ];then
-        echo "  src: https://gitee.com/src-openeuler/$1.git" >> "SOURCEINFO.yaml"
-else
-        echo "  src: https://gitee.com/src-anolis-os/$1.git" >> "SOURCEINFO.yaml"
-fi
-
-cd ~
 # 拉取cq仓库里的包
-git clone http://192.168.10.152/cyos-security/public/$1.git
+bash clone.sh $package_name
