@@ -37,6 +37,9 @@ repos=(
     "http://192.168.10.152/cyos-security/$package_name.git"
     "http://192.168.10.152/cyos-security/toolkits/$package_name.git"
     "http://192.168.10.152/cyos-security/transition/python3.11/$package_name.git"
+    "http://192.168.10.152/cyos-security/transition/deb_to_rpm/$package_name.git"
+    "http://192.168.10.152/cyos-security/transition/xfce/$package_name.git"
+    "http://192.168.10.152/cyos-security/transition/$package_name.git"
 	"http://192.168.10.152/lixuebing/$package_name.git"
 )
 
