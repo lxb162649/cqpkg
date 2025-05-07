@@ -73,9 +73,9 @@ spec_name=$(ls)
 cd ..
 
 # 获取顶级上游地址
-url=$(awk '/^URL:/ {print $branch}' "./SPECS/${spec_name}")
+url=$(awk '/^URL:/ {print $2}' "./SPECS/${spec_name}")
 if [ -z "${url}" ];then
-    url=$(awk '/^Url:/ {print $branch}' "./SPECS/${spec_name}")
+    url=$(awk '/^Url:/ {print $2}' "./SPECS/${spec_name}")
 fi
 
 # 获取开源协议

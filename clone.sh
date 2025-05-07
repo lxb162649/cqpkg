@@ -44,7 +44,7 @@ for repo in "${repos[@]}"; do
         exit 0
     else
         rm -rf $package_name
-        echo "克隆 $repo 失败，等待 3 秒后重试..."
-        sleep 3
+        echo "克隆 $repo 失败，等待 1 秒后重试..."
+        sleep 1
     fi
 done
