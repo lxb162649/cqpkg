@@ -31,6 +31,10 @@ rm -rf $package_name
 repos=(
     "http://192.168.10.152/cyos-security/public/$package_name.git"
     "http://192.168.10.152/cyos-security/protected/$package_name.git"
+    "http://192.168.10.152/cyos-security/private/$package_name.git"
+    "http://192.168.10.152/cyos-security/trash/$package_name.git"
+    "http://192.168.10.152/cyos-security/iso/$package_name.git"
+    "http://192.168.10.152/cyos-security/$package_name.git"
     "http://192.168.10.152/cyos-security/toolkits/$package_name.git"
     "http://192.168.10.152/cyos-security/transition/python3.11/$package_name.git"
 	"http://192.168.10.152/lixuebing/$package_name.git"
@@ -44,7 +48,6 @@ for repo in "${repos[@]}"; do
         exit 0
     else
         rm -rf $package_name
-        echo "克隆 $repo 失败，等待 1 秒后重试..."
-        sleep 1
+        echo "克隆 $repo 失败，重试..."
     fi
 done
