@@ -9,16 +9,22 @@ if [[ $1 == "-h" || $1 == "--help" ]]; then
 参数1：包的名称
 
 使用方法
-1.拉取代码
+1.拉取主分支代码
 ./clone.sh 包名
 示例：
 ./clone.sh felix-scr
-将拉取 cq 仓库中 felix-scr 代码
+将拉取 cq 仓库中 felix-scr 的 master 分支代码
+2.拉取指定分支代码
+./clone.sh 包名 分支名
+示例：
+./clone.sh felix-scr dev
+将拉取 cq 仓库中 felix-scr 的 dev 分支代码
 EOF
 exit 0
 fi
 
 package_name=$1
+branch=${2-master}
 
 if [ -z "$package_name" ];then
 	echo "缺少包名参数"
@@ -44,7 +50,7 @@ repos=(
 )
 
 for repo in "${repos[@]}"; do
-    git clone "$repo"
+    git clone -b $branch "$repo"
     exit_code=$?
     if [ $exit_code -eq 0 ]; then
         echo "成功克隆 $repo"

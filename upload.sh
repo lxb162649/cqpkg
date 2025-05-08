@@ -16,6 +16,8 @@ if [[ $1 == "-h" || $1 == "--help" ]]; then
 示例：
 ./upload.sh felix-scr dev "文档(README): 更新README文件"
 将代码上传到 felix-scr 的 dev 分支，提交信息为 "文档(README): 更新README文件"
+"修复(spec): 移除anolis_release、rhel宏"
+"修复(spec): 移除rhel宏"
 EOF
 exit 0
 fi
