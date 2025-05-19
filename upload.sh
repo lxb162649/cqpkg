@@ -18,6 +18,8 @@ if [[ $1 == "-h" || $1 == "--help" ]]; then
 将代码上传到 felix-scr 的 dev 分支，提交信息为 "文档(README): 更新README文件"
 "修复(spec): 移除anolis_release、rhel宏"
 "修复(spec): 移除rhel宏"
+"更新(同步欧拉仓库)：同步版本-2.12.1"
+"更新(同步龙蜥仓库)：同步版本-2.12.1"
 EOF
 exit 0
 fi

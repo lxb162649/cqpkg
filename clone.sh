@@ -57,6 +57,5 @@ for repo in "${repos[@]}"; do
         exit 0
     else
         rm -rf $package_name
-        echo "克隆 $repo 失败，重试..."
     fi
 done

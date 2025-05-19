@@ -42,8 +42,12 @@ fi
 # 删除原来的仓库
 rm -rf $package_name
 
-if [[ $branch =~ "openEuler" ]]; then
-    git clone -b $branch https://gitee.com/src-openeuler/$package_name.git
+# 判断从欧拉仓库还是龙蜥仓库拉取代码
+read -p "从欧拉仓库还是龙蜥仓库拉取 $package_name 代码？(输入 a 从欧拉拉取 $package_name 代码，其他输则从龙蜥拉取 $package_name 代码)" choice
+choice=$(echo "$choice" | tr '[:upper:]' '[:lower:]')
+
+if [ "$choice" = "a" ]; then
+    git clone -b $branch https://gitee.com/src-openeuler/$package_name.git  
 else
     git clone -b $branch https://gitee.com/src-anolis-os/$package_name.git 
 fi
@@ -87,7 +91,7 @@ echo "  - ${license}" >> "SOURCEINFO.yaml"
 
 # 写入上游社区
 echo "upstream:" >> "SOURCEINFO.yaml"
-if [[ $branch =~ "openEuler" ]]; then
+if [ "$choice" = "a" ]; then
     echo "  src: https://gitee.com/src-openeuler/$package_name.git" >> "SOURCEINFO.yaml"
 else
     echo "  src: https://gitee.com/src-anolis-os/$package_name.git" >> "SOURCEINFO.yaml"
@@ -100,7 +104,15 @@ echo "  branch: $branch" >> "SOURCEINFO.yaml"
 echo "origin:" >> "SOURCEINFO.yaml"
 echo "  src: ${url}" >> "SOURCEINFO.yaml"
 
-cd ..
+# 提示用户是否执行命令
+read -p "是否要从 CQ 仓库拉取 $package_name 代码？(输入 y 或 yes 执行，其他输入则跳过)" choice2
 
-# 拉取cq仓库里的包
-bash clone.sh $package_name
+# 将用户输入转换为小写，方便统一判断
+choice2=$(echo "$choice2" | tr '[:upper:]' '[:lower:]')
+
+# 判断用户输入并执行相应操作
+if [ "$choice2" = "y" ] || [ "$choice2" = "yes" ]; then
+    echo "正在从 CQ 仓库拉取代码..."
+    cd ..
+    bash clone.sh $package_name
+fi

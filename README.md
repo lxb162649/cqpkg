@@ -10,13 +10,13 @@ git clone http://192.168.10.152/lixuebing/cve-processing.git
 clone.sh、update-clone.sh、compile.sh、upload.sh function.sh 文件均放在 ~ 目录下，并在 ~ 目录下执行
 ```
 cd ./cve-processing
-cp clone.sh update-clone.sh compile.sh upload.sh function.sh ~/ -rf
+cp clone.sh update-clone.sh compile.sh upload.sh function.sh ../ -rf
 ```
 
 ## 增加可执行性权限
 
 ```
-cd ~
+cd ..
 chmod +x clone.sh update-clone.sh compile.sh upload.sh function.sh
 ```
 
