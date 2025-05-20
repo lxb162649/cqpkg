@@ -80,8 +80,7 @@ git push -uf origin $branch
 cd ..
 
 # 做个备份
-rm -rf success/Package/$package_name
-# 创建目录
-mkdir success/{Package,RPMS} -p
-cp -rf $package_name/RPMS success/
-cp -rf $package_name success/Package/
+if [ -f $package_name/RPMS ]; then
+	mkdir success
+	cp -rf $package_name/RPMS success/
+fi
