@@ -44,14 +44,14 @@ else
 fi
 
 # 提示用户是否执行命令
-read -p "是否要从 rpmbuild 目录下上传代码？(输入 y 或 yes 执行，其他输入则跳过)" choice
+read -p "是否要从 ~/rpmbuild 目录下上传代码？(输入 y 或 yes 执行，其他输入则跳过)" choice
 
 # 将用户输入转换为小写，方便统一判断
 choice=$(echo "$choice" | tr '[:upper:]' '[:lower:]')
 
 # 判断用户输入并执行相应操作
 if [ "$choice" = "y" ] || [ "$choice" = "yes" ]; then
-    echo "正在从 rpmbuild 目录下上传代码..."
+    echo "正在从 ~/rpmbuild 目录下上传代码..."
     # 删除cq仓库里的主要文件
 	rm -rf $package_name/BUILD
 	rm -rf $package_name/SOURCES
@@ -59,7 +59,7 @@ if [ "$choice" = "y" ] || [ "$choice" = "yes" ]; then
 	rm -rf $package_name/SOURCEINFO.yaml
 
 	# 拷贝已经编译好的文件到CQ仓库
-	cp -rf rpmbuild/* $package_name/
+	cp -rf ~/rpmbuild/* $package_name/
 else
     echo "正在从 $package_name 目录下上传代码..."
 fi
@@ -81,6 +81,6 @@ cd ..
 
 # 做个备份
 if [ -f $package_name/RPMS ]; then
-	mkdir success
+	mkdir -p success
 	cp -rf $package_name/RPMS success/
 fi
