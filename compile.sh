@@ -25,8 +25,6 @@ exit 0
 fi
 
 package_name=$1
-ls ~/rpmbuild > /dev/null
-CHECK_RESULT $? 0 0 "不存在 ~/rpmbuild 目录"
 
 if [ -z "$package_name" ];then
     # 安装编译 *.spec 文件所需的软件包
