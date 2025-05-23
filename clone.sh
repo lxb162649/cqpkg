@@ -1,61 +1,173 @@
 #!/bin/bash
 
+# 引入函数库（假设包含CHECK_RESULT函数）
 source "function.sh"
 
-if [[ $1 == "-h" || $1 == "--help" ]]; then
-        cat << EOF
-功能：拉取 cq 仓库代码
+# 帮助信息
+help_msg() {
+    cat <<EOF
+功能说明：
+- 从指定仓库克隆软件包源码并配置RPM构建环境
+- 支持欧拉（OpenEuler）、龙蜥（Anolis OS）和CQ内部仓库
+- 自动生成SOURCEINFO.yaml元数据文件
 
-参数1：包的名称
+使用语法：
+./update-clone.sh [选项] <包名> [分支名]
 
-使用方法
-1.拉取主分支代码
-./clone.sh 包名
+参数说明：
+  <包名>        必需，软件包名称（如：httpd）
+  [分支名]      可选，默认master
+
+选项：
+  -h, --help    显示此帮助信息
+
+操作流程：
+1. 输入仓库类型（a=欧拉, b=龙蜥, 其他=CQ内部仓库）
+2. 自动克隆代码并配置~/rpmbuild目录结构
+3. 生成包含开源协议、上游信息的SOURCEINFO.yaml
+
 示例：
-./clone.sh felix-scr
-将拉取 cq 仓库中 felix-scr 的 master 分支代码
-2.拉取指定分支代码
-./clone.sh 包名 分支名
-示例：
-./clone.sh felix-scr dev
-将拉取 cq 仓库中 felix-scr 的 dev 分支代码
+1. 克隆龙蜥仓库httpd的a8.9分支：
+   ./update-clone.sh httpd a8.9
+   输入 b
+
+2. 克隆CQ内部仓库的nginx：
+   ./update-clone.sh nginx
+   输入 c（或其他任意键）
 EOF
-exit 0
+}
+
+# 参数校验
+if [[ $1 == "-h" || $1 == "--help" ]]; then
+    help_msg
+    exit 1
 fi
 
 package_name=$1
-branch=${2-master}
+branch=${2:-master}  # 默认分支
+current_path=$(pwd)
 
-if [ -z "$package_name" ];then
-	echo "缺少包名参数"
-	exit 1
+# 检查包名
+if [ -z "$package_name" ]; then
+    echo "错误：缺少包名参数" >&2
+    exit 1
 fi
 
-rm -rf $package_name
+# 清理旧目录
+clean_env() {
+    echo "正在清理旧环境..."
+    rm -rf "$package_name" ~/rpmbuild
+    mkdir -p ~/rpmbuild/{BUILD,SOURCES,SPECS}
+}
 
-# 拉取cq仓库里的包
-repos=(
-    "http://192.168.10.152/cyos-security/public/$package_name.git"
-    "http://192.168.10.152/cyos-security/protected/$package_name.git"
-    "http://192.168.10.152/cyos-security/private/$package_name.git"
-    "http://192.168.10.152/cyos-security/trash/$package_name.git"
-    "http://192.168.10.152/cyos-security/iso/$package_name.git"
-    "http://192.168.10.152/cyos-security/$package_name.git"
-    "http://192.168.10.152/cyos-security/toolkits/$package_name.git"
-    "http://192.168.10.152/cyos-security/transition/python3.11/$package_name.git"
-    "http://192.168.10.152/cyos-security/transition/deb_to_rpm/$package_name.git"
-    "http://192.168.10.152/cyos-security/transition/xfce/$package_name.git"
-    "http://192.168.10.152/cyos-security/transition/$package_name.git"
-	"http://192.168.10.152/lixuebing/$package_name.git"
-)
+# 克隆仓库函数
+clone_repo() {
+    local repo_url=$1
+    echo "尝试克隆：$repo_url"
+    git clone -b "$branch" "$repo_url" && return 0
+    rm -rf "$package_name"  # 克隆失败清理残留
+    return 1
+}
 
-for repo in "${repos[@]}"; do
-    git clone -b $branch "$repo"
-    exit_code=$?
-    if [ $exit_code -eq 0 ]; then
-        echo "成功克隆 $repo"
+# 交互选择仓库
+read -p "请选择仓库类型（a=欧拉, b=龙蜥, 其他=CQ内部仓库）: " choice
+choice=$(echo "$choice" | tr '[:upper:]' '[:lower:]')
+
+clean_env  # 初始化环境
+
+case "$choice" in
+    a)
+        repo_url="https://gitee.com/src-openeuler/${package_name}.git"
+        clone_repo "$repo_url" || CHECK_RESULT $? 0 0 "欧拉仓库克隆失败"
+        ;;
+    b)
+        repo_url="https://gitee.com/src-anolis-os/${package_name}.git"
+        clone_repo "$repo_url" || CHECK_RESULT $? 0 0 "龙蜥仓库克隆失败"
+        ;;
+    *)
+        # CQ内部仓库列表（按优先级排序）
+        cq_repos=(
+            "http://192.168.10.152/cyos-security/public/$package_name.git"
+            "http://192.168.10.152/cyos-security/protected/$package_name.git"
+            "http://192.168.10.152/cyos-security/private/$package_name.git"
+            "http://192.168.10.152/cyos-security/trash/$package_name.git"
+            "http://192.168.10.152/cyos-security/iso/$package_name.git"
+            "http://192.168.10.152/cyos-security/$package_name.git"
+            "http://192.168.10.152/cyos-security/toolkits/$package_name.git"
+            "http://192.168.10.152/cyos-security/transition/python3.11/$package_name.git"
+            "http://192.168.10.152/cyos-security/transition/deb_to_rpm/$package_name.git"
+            "http://192.168.10.152/cyos-security/transition/xfce/$package_name.git"
+            "http://192.168.10.152/cyos-security/transition/$package_name.git"
+            "http://192.168.10.152/lixuebing/$package_name.git"
+        )
+
+        local cloned=0
+        for repo in "${cq_repos[@]}"; do
+            clone_repo "$repo" && {
+                cloned=1
+                break
+            }
+        done
+
+        [[ $cloned -eq 0 ]] && CHECK_RESULT $? 0 0 "CQ仓库克隆失败"
+
+        if [ ! -f "$package_name/.gitignore" ]; then
+            cat > $package_name/.gitignore << EOF
+#rpm
+RPMS
+SRPMS
+BUILDROOT
+#vscode
+.vscode 
+EOF
+        fi
         exit 0
-    else
-        rm -rf $package_name
+        ;;
+esac
+
+# 移动文件到rpmbuild目录
+move_files() {
+    echo "正在整理文件到 ~/rpmbuild..."
+    mv "$package_name"/*.spec ~/rpmbuild/SPECS/ || CHECK_RESULT $? 0 0 "移动SPEC文件失败"
+    mv "$package_name"/* ~/rpmbuild/SOURCES/ || CHECK_RESULT $? 0 0 "移动源码失败"
+    rm -rf "$package_name"
+}
+
+# 生成元数据文件
+generate_metadata() {
+    cd ~/rpmbuild || return 1
+    local spec_file=$(ls SPECS/*.spec 2>/dev/null)
+    
+    if [ -z "$spec_file" ]; then
+        echo "错误：未找到SPEC文件" >&2
+        exit 1
     fi
-done
+
+    # 提取元数据
+    local url=$(awk '/^(URL|Url):/ {print $2}' "$spec_file")
+    local license=$(grep -oP 'License:\s*\K.*' "$spec_file" | tr '\n' ' ')
+    
+    # 确定上游仓库URL
+    local upstream_url
+    if [ "$choice" = "a" ]; then
+        upstream_url="https://gitee.com/src-openeuler/${package_name}.git"
+    else
+        upstream_url="https://gitee.com/src-anolis-os/${package_name}.git"
+    fi
+    
+    # 写入YAML
+    cat <<EOF > SOURCEINFO.yaml
+license:
+  - ${license}
+upstream:
+  src: ${upstream_url}
+  branch: ${branch}
+origin:
+  src: ${url:-"未指定上游地址"}
+EOF
+
+    echo "元数据文件生成完成：$(pwd)/SOURCEINFO.yaml"
+}
+
+# 执行主流程
+move_files && generate_metadata && echo "操作完成！RPM构建环境已配置到 ~/rpmbuild"

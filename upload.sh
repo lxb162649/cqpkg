@@ -2,85 +2,128 @@
 
 source "function.sh"
 
-if [[ $1 == "-h" || $1 == "--help" ]]; then
-    cat << EOF
-功能：将代码上传到 gitlab 仓库指定分支，并提供提交信息
+# 帮助信息
+help_msg() {
+    cat <<EOF
+功能说明：
+将本地代码上传至GitLab仓库指定分支，并支持提交信息规范
 
-参数1：要从龙蜥或欧拉仓库克隆的包的名称
-参数2：包的分支
-参数3：提交信息
+使用语法：
+./upload.sh <包名> <分支名> "<提交信息>"
 
-使用方法
-1.上传代码
-./upload.sh 包名 分支 提交信息
+参数说明：
+  <包名>        必需，目标仓库名称（如：felix-scr）
+  <分支名>      必需，目标分支（如：dev/test）
+  <提交信息>    必需，遵循规范（如："修复(spec): 优化SPEC文件"）
+
+规范示例：
+- 文档更新："文档(README): 更新安装步骤"
+- SPEC修复："修复(spec): 移除无效宏定义"
+- 上游同步："更新(欧拉): 同步版本2.12.1"
+- 架构适配："适配(x86_64): 修复编译警告"
+
+操作流程：
+1. 选择代码来源（~/rpmbuild 或当前目录）
+2. 自动清理/复制文件
+3. 提交到指定分支并创建备份
+
 示例：
-./upload.sh felix-scr dev "文档(README): 更新README文件"
-将代码上传到 felix-scr 的 dev 分支，提交信息为 "文档(README): 更新README文件"
-"修复(spec): 移除anolis_release、rhel宏"
-"修复(spec): 移除rhel宏"
-"更新(同步欧拉仓库)：同步版本-2.12.1"
-"更新(同步龙蜥仓库)：同步版本-2.12.1"
+./upload.sh nginx main "更新(龙蜥): 同步2.18.0版本"
 EOF
-exit 0
+}
+
+# 参数校验
+if [[ $1 == "-h" || $1 == "--help" ]]; then
+    help_msg
+    exit 0
 fi
 
 package_name=$1
 branch=$2
-commit=$3
+commit_msg=$3  # 更清晰的变量名
 
-if [ -z "$package_name" ];then
-    echo "缺少包名参数，缺少分支参数，缺少提交信息参数"
+# 检查必填参数
+if [ -z "$package_name" ] || [ -z "$branch" ] || [ -z "$commit_msg" ]; then
+    echo "错误：缺少必填参数（包名、分支、提交信息）" >&2
+    help_msg
     exit 1
-else
-	if [ -z "$branch" ];then
-    	echo "缺少分支参数，缺少提交信息参数"
-    	exit 1
-	else
-		if [ -z "$commit" ];then
-			echo "缺少提交信息参数"
-			exit 1
-		fi	
-	fi
 fi
 
-# 提示用户是否执行命令
-read -p "是否要从 ~/rpmbuild 目录下上传代码？(输入 y 或 yes 执行，其他输入则跳过)" choice
-
-# 将用户输入转换为小写，方便统一判断
+# 交互式确认
+read -p "是否从 ~/rpmbuild 目录上传代码？(y/yes/其他跳过): " choice
 choice=$(echo "$choice" | tr '[:upper:]' '[:lower:]')
 
-# 判断用户输入并执行相应操作
-if [ "$choice" = "y" ] || [ "$choice" = "yes" ]; then
-    echo "正在从 ~/rpmbuild 目录下上传代码..."
-    # 删除cq仓库里的主要文件
-	rm -rf $package_name/BUILD
-	rm -rf $package_name/SOURCES
-	rm -rf $package_name/SPECS
-	rm -rf $package_name/SOURCEINFO.yaml
-
-	# 拷贝已经编译好的文件到CQ仓库
-	cp -rf ~/rpmbuild/* $package_name/
+# 代码复制逻辑
+if [[ "$choice" =~ ^(y|yes)$ ]]; then
+    echo "正在从 ~/rpmbuild 复制代码..."
+    # 清理旧文件（使用绝对路径避免误删）
+    rm -rf "$package_name/BUILD" "$package_name/SOURCES" "$package_name/SPECS" "$package_name/SOURCEINFO.yaml"
+    # 复制文件（保留目录结构）
+    cp -rf ~/rpmbuild/. "$package_name/" || {
+        echo "错误：复制文件失败" >&2
+        exit 1
+    }
 else
-    echo "正在从 $package_name 目录下上传代码..."
+    echo "使用当前目录代码：$package_name"
 fi
 
-cd $package_name
-CHECK_RESULT $? 0 0 "不存在 $package_name 目录" 
+# 进入仓库目录
+cd "$package_name" || {
+    echo "错误：目录不存在：$package_name" >&2
+    exit 1
+}
 
-# 建立分支
-git branch -M $branch
+if [ ! -f ".gitignore" ]; then
+    cat > .gitignore << EOF
+#rpm
+RPMS
+SRPMS
+BUILDROOT
+#vscode
+.vscode 
+EOF
+fi
 
-# 将所有文件进行打包至预发区并说明提交信息
+# 分支管理
+git branch -M "$branch"  # 强制切换/创建分支
+git checkout "$branch"    # 确保在目标分支
+
+# 提交代码
 git add .
-git commit -m "$commit"
+git commit -m "$commit_msg" || {
+    echo "错误：提交失败，可能无变更" >&2
+    exit 1
+}
 
-# 上传/提交到gitlab的$2分支中
-git push -uf origin $branch
+# 推送至远程仓库
+echo "正在推送至 origin/$branch..."
+git push -uf origin "$branch" || {
+    echo "错误：推送失败，请检查网络和权限" >&2
+    exit 1
+}
 
-cd ..
+# 备份RPM包
+create_backup() {
+    local backup_dir="../success/RPMS"
+    mkdir -p "$backup_dir/{noarch,x86_64}"
+    
+    # 备份noarch架构包
+    if ls -1 RPMS/noarch/*.rpm &> /dev/null; then
+        cp -v RPMS/noarch/*.rpm "$backup_dir/noarch/"
+    fi
+    
+    # 备份x86_64架构包
+    if ls -1 RPMS/x86_64/*.rpm &> /dev/null; then
+        cp -v RPMS/x86_64/*.rpm "$backup_dir/x86_64/"
+    fi
+}
 
-# 做个备份
-if [ -f $package_name/RPMS ]; then
-	mkdir -p success
-	cp -rf $package_name/RPMS success/
+# 执行备份（仅当存在RPM文件时）
+if [ "$(ls -A RPMS 2>/dev/null)" ]; then
+    echo "创建备份到 ../success/RPMS"
+    create_backup
+else
+    echo "警告：未找到RPM文件，跳过备份"
 fi
+
+echo "操作完成！代码已推送至 $branch 分支"
