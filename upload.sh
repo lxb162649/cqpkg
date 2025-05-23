@@ -1,7 +1,5 @@
 #!/bin/bash
 
-source "function.sh"
-
 # 帮助信息
 help_msg() {
     cat <<EOF
@@ -9,7 +7,7 @@ help_msg() {
 将本地代码上传至GitLab仓库指定分支，并支持提交信息规范
 
 使用语法：
-./upload.sh <包名> <分支名> "<提交信息>"
+upload <包名> <分支名> "<提交信息>"
 
 参数说明：
   <包名>        必需，目标仓库名称（如：felix-scr）
@@ -19,7 +17,8 @@ help_msg() {
 规范示例：
 - 文档更新："文档(README): 更新安装步骤"
 - SPEC修复："修复(spec): 移除无效宏定义"
-- 上游同步："更新(欧拉): 同步版本2.12.1"
+- 上游同步："更新(同步欧拉仓库): 同步版本2.12.1"
+- 上游同步："更新(同步龙蜥仓库): 同步版本2.12.1"
 - 架构适配："适配(x86_64): 修复编译警告"
 
 操作流程：
@@ -28,7 +27,7 @@ help_msg() {
 3. 提交到指定分支并创建备份
 
 示例：
-./upload.sh nginx main "更新(龙蜥): 同步2.18.0版本"
+upload nginx main "更新(龙蜥): 同步2.18.0版本"
 EOF
 }
 
@@ -41,7 +40,7 @@ fi
 package_name=$1
 branch=$2
 commit_msg=$3  # 更清晰的变量名
-
+package_path=$(realpath $package_name)
 # 检查必填参数
 if [ -z "$package_name" ] || [ -z "$branch" ] || [ -z "$commit_msg" ]; then
     echo "错误：缺少必填参数（包名、分支、提交信息）" >&2
@@ -57,19 +56,19 @@ choice=$(echo "$choice" | tr '[:upper:]' '[:lower:]')
 if [[ "$choice" =~ ^(y|yes)$ ]]; then
     echo "正在从 ~/rpmbuild 复制代码..."
     # 清理旧文件（使用绝对路径避免误删）
-    rm -rf "$package_name/BUILD" "$package_name/SOURCES" "$package_name/SPECS" "$package_name/SOURCEINFO.yaml"
+    rm -rf "$package_path/BUILD" "$package_path/SOURCES" "$package_path/SPECS" "$package_path/SOURCEINFO.yaml"
     # 复制文件（保留目录结构）
-    cp -rf ~/rpmbuild/. "$package_name/" || {
+    cp -rf ~/rpmbuild/. "$package_path/" || {
         echo "错误：复制文件失败" >&2
         exit 1
     }
 else
-    echo "使用当前目录代码：$package_name"
+    echo "使用当前目录代码：$package_path"
 fi
 
 # 进入仓库目录
-cd "$package_name" || {
-    echo "错误：目录不存在：$package_name" >&2
+cd "$package_path" || {
+    echo "错误：目录不存在：$package_path" >&2
     exit 1
 }
 
@@ -105,16 +104,16 @@ git push -uf origin "$branch" || {
 # 备份RPM包
 create_backup() {
     local backup_dir="../success/RPMS"
-    mkdir -p "$backup_dir/{noarch,x86_64}"
+    mkdir -p $backup_dir/{noarch,x86_64}
     
     # 备份noarch架构包
-    if ls -1 RPMS/noarch/*.rpm &> /dev/null; then
-        cp -v RPMS/noarch/*.rpm "$backup_dir/noarch/"
+    if ls -1 $package_path/RPMS/noarch/*.rpm &> /dev/null; then
+        cp -v $package_path/RPMS/noarch/*.rpm "$backup_dir/noarch/"
     fi
     
     # 备份x86_64架构包
-    if ls -1 RPMS/x86_64/*.rpm &> /dev/null; then
-        cp -v RPMS/x86_64/*.rpm "$backup_dir/x86_64/"
+    if ls -1 $package_path/RPMS/x86_64/*.rpm &> /dev/null; then
+        cp -v $package_path/RPMS/x86_64/*.rpm "$backup_dir/x86_64/"
     fi
 }
 

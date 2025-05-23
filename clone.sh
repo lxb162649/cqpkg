@@ -1,7 +1,11 @@
 #!/bin/bash
 
-# 引入函数库（假设包含CHECK_RESULT函数）
-source "function.sh"
+CHECK_RESULT() {
+    if [ $1 -ne 0 ]; then
+        echo "错误：$2" >&2
+        exit 1
+    fi
+}
 
 # 帮助信息
 help_msg() {
@@ -12,7 +16,7 @@ help_msg() {
 - 自动生成SOURCEINFO.yaml元数据文件
 
 使用语法：
-./update-clone.sh [选项] <包名> [分支名]
+clone <包名> [分支名]
 
 参数说明：
   <包名>        必需，软件包名称（如：httpd）
@@ -27,12 +31,16 @@ help_msg() {
 3. 生成包含开源协议、上游信息的SOURCEINFO.yaml
 
 示例：
-1. 克隆龙蜥仓库httpd的a8.9分支：
-   ./update-clone.sh httpd a8.9
+1. 克隆龙蜥仓库httpd的openEuler-24.03-LTS分支：
+   clone httpd openEuler-24.03-LTS
+   输入 a
+
+2. 克隆龙蜥仓库httpd的a8.9分支：
+   clone httpd a8.9
    输入 b
 
-2. 克隆CQ内部仓库的nginx：
-   ./update-clone.sh nginx
+3. 克隆CQ内部仓库httpd的dev分支：
+   clone httpd dev
    输入 c（或其他任意键）
 EOF
 }
@@ -40,7 +48,7 @@ EOF
 # 参数校验
 if [[ $1 == "-h" || $1 == "--help" ]]; then
     help_msg
-    exit 1
+    exit 0
 fi
 
 package_name=$1
@@ -73,16 +81,16 @@ clone_repo() {
 read -p "请选择仓库类型（a=欧拉, b=龙蜥, 其他=CQ内部仓库）: " choice
 choice=$(echo "$choice" | tr '[:upper:]' '[:lower:]')
 
-clean_env  # 初始化环境
-
 case "$choice" in
     a)
+        clean_env  # 初始化环境
         repo_url="https://gitee.com/src-openeuler/${package_name}.git"
-        clone_repo "$repo_url" || CHECK_RESULT $? 0 0 "欧拉仓库克隆失败"
+        clone_repo "$repo_url" || CHECK_RESULT $? "欧拉仓库克隆失败"
         ;;
     b)
+        clean_env  # 初始化环境
         repo_url="https://gitee.com/src-anolis-os/${package_name}.git"
-        clone_repo "$repo_url" || CHECK_RESULT $? 0 0 "龙蜥仓库克隆失败"
+        clone_repo "$repo_url" || CHECK_RESULT $? "龙蜥仓库克隆失败"
         ;;
     *)
         # CQ内部仓库列表（按优先级排序）
@@ -109,7 +117,7 @@ case "$choice" in
             }
         done
 
-        [[ $cloned -eq 0 ]] && CHECK_RESULT $? 0 0 "CQ仓库克隆失败"
+        [[ $cloned -eq 0 ]] && CHECK_RESULT $? "CQ仓库克隆失败"
 
         if [ ! -f "$package_name/.gitignore" ]; then
             cat > $package_name/.gitignore << EOF
@@ -128,8 +136,8 @@ esac
 # 移动文件到rpmbuild目录
 move_files() {
     echo "正在整理文件到 ~/rpmbuild..."
-    mv "$package_name"/*.spec ~/rpmbuild/SPECS/ || CHECK_RESULT $? 0 0 "移动SPEC文件失败"
-    mv "$package_name"/* ~/rpmbuild/SOURCES/ || CHECK_RESULT $? 0 0 "移动源码失败"
+    mv "$package_name"/*.spec ~/rpmbuild/SPECS/ || CHECK_RESULT $? "移动SPEC文件失败"
+    mv "$package_name"/* ~/rpmbuild/SOURCES/ || CHECK_RESULT $? "移动源码失败"
     rm -rf "$package_name"
 }
 
