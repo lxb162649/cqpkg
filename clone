@@ -93,6 +93,7 @@ case "$choice" in
         clone_repo "$repo_url" || CHECK_RESULT $? "龙蜥仓库克隆失败"
         ;;
     *)
+        rm -rf "$package_name"
         # CQ内部仓库列表（按优先级排序）
         cq_repos=(
             "http://192.168.10.152/cyos-security/public/$package_name.git"
@@ -109,17 +110,15 @@ case "$choice" in
             "http://192.168.10.152/lixuebing/$package_name.git"
         )
 
-        local cloned=0
         for repo in "${cq_repos[@]}"; do
-            clone_repo "$repo" && {
-                cloned=1
-                break
-            }
+            status_code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "${repo%.git}")
+            if [ $status_code == 200 ]; then
+                clone_repo "$repo" && break
+            fi
         done
 
-        [[ $cloned -eq 0 ]] && CHECK_RESULT $? "CQ仓库克隆失败"
 
-        if [ ! -f "$package_name/.gitignore" ]; then
+        if [ ! -f "$package_name/.gitignore" ] && [ -d "$package_name/SPECS" ]; then
             cat > $package_name/.gitignore << EOF
 #rpm
 RPMS
