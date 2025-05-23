@@ -4,7 +4,7 @@
 
 首次使用该项目运行
 ```
-cp -f $(find ~ -name cqpkg_manager)/pkg_env_init.sh /usr/bin/pkg_env_init
+cp -f $(find ~ -name cqpkg_manager)/pkg_env_init /usr/bin/pkg_env_init
 ```
 以后运行
 ```
