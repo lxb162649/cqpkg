@@ -1,37 +1,34 @@
 # 软件包同步或修改
 
-## 拉取代码
+## 修改环境
 
+首次使用该项目运行
 ```
-git clone http://192.168.10.152/lixuebing/cve-processing.git
+cp -f $(find ~ -name cqpkg_manager)/pkg_env_init.sh /usr/bin/pkg_env_init
 ```
-
+以后运行
+```
+pkg_env_init
+```
 ## 处理
 
 ### 第1步
 拉取仓库代码
 ```
-./clone.sh 包名 分支名
+clone 包名 分支名
 ```
 
 ### 第2步
-包名目录下
-加入补丁，修改 spec 文件
+修改 spec 文件
 
 ### 第3步
 编译
 ```
-./compile.sh 包名
+compile 包名
 ```
 
 ### 第4步
 上传到 gitlab(cq仓库)
 ```
-./upload.sh 包名 分支名 commit内容
-```
-
-### 第4步
-上传到 gitlab(cq仓库)，rpm 包放在 success/RPMS 中
-```
-./upload.sh 包名 分支名 commit内容
+upload 包名 分支名 commit内容
 ```
