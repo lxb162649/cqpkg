@@ -72,17 +72,6 @@ cd "$package_path" || {
     exit 1
 }
 
-if [ ! -f ".gitignore" ]; then
-    cat > .gitignore << EOF
-#rpm
-RPMS
-SRPMS
-BUILDROOT
-#vscode
-.vscode 
-EOF
-fi
-
 # 分支管理
 git branch -M "$branch"  # 强制切换/创建分支
 git checkout "$branch"    # 确保在目标分支
