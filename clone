@@ -111,10 +111,7 @@ case "$choice" in
         )
 
         for repo in "${cq_repos[@]}"; do
-            status_code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "${repo%.git}")
-            if [ $status_code == 200 ]; then
-                clone_repo "$repo" && break
-            fi
+            git ls-remote http://192.168.10.152/cyos-security/public/mod_wsgi.git > /var/null && clone_repo "$repo" && break
         done
 
 
