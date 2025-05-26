@@ -111,7 +111,7 @@ case "$choice" in
         )
 
         for repo in "${cq_repos[@]}"; do
-            git ls-remote http://192.168.10.152/cyos-security/public/mod_wsgi.git > /var/null && clone_repo "$repo" && break
+            git ls-remote $repo &>/dev/null && clone_repo "$repo" && break
         done
 
 
