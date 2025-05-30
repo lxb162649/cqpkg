@@ -1,0 +1,7 @@
+license:
+  - GPLv3+
+upstream:
+  src: https://github.com/lxb162649/cqpkg
+  branch: master
+origin:
+  src: https://github.com/lxb162649/cqpkg

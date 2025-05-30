@@ -10,10 +10,10 @@ help_msg() {
   2. 本地模式：基于指定的源码包目录
 
 使用语法：
-compile [包名]
+compile [路径名]
 
 参数说明：
-  [包名] 可选，源码包目录名（默认使用 ~/rpmbuild）
+  [路径名] 可选，源码包目录名（默认使用 ~/rpmbuild）
 
 示例：
 1. 全局模式（编译~/rpmbuild中的SPEC文件）：
@@ -30,18 +30,17 @@ if [[ $1 == "-h" || $1 == "--help" ]]; then
     exit 0
 fi
 
-package_name=$1
+package_path=$1
 
 # 确定工作目录
-if [ -z "$package_name" ]; then
-    work_dir=~/rpmbuild
-    spec_pattern="$work_dir/SPECS/*.spec"
+if [ -z "$package_path" ]; then
+    package_path=~/rpmbuild
+    spec_pattern="$package_path/SPECS/*.spec"
 else
-    work_dir=$(realpath "$package_name")
-    spec_pattern="$work_dir/SPECS/*.spec"
+    spec_pattern="$package_path/SPECS/*.spec"
     
-    if [ ! -d "$work_dir" ]; then
-        echo "错误：目录不存在：$work_dir" >&2
+    if [ ! -d "$package_path" ]; then
+        echo "错误：目录不存在：$package_path" >&2
         exit 1
     fi
 fi
@@ -49,8 +48,10 @@ fi
 # 安装编译依赖
 install_deps() {
     echo "正在安装编译依赖..."
-    if ! yum builddep -y $spec_pattern; then
-        echo "安装依赖失败" && exit 1
+    if ! yum builddep -y $spec_pattern &>/dev/null; then
+        if ! yum-builddep -y $spec_pattern; then
+            echo "安装依赖失败" && exit 1
+        fi
     fi
 }
 
@@ -58,8 +59,8 @@ install_deps() {
 build_rpm() {
     local build_args=()
 
-    cd $work_dir
-    if [ "$work_dir" != "$HOME/rpmbuild" ]; then
+    cd $package_path
+    if [ "$package_path" != "$HOME/rpmbuild" ]; then
         build_args+=(-D "_topdir $(pwd)")  # 设置自定义TOPDIR
     fi
     
@@ -75,7 +76,7 @@ build_rpm() {
 
 # 展示构建结果
 show_results() {
-    local rpms_dir="${work_dir}/RPMS"
+    local rpms_dir="${package_path}/RPMS"
     
     if [ ! -d "$rpms_dir" ]; then
         echo "警告：未生成RPM文件"
