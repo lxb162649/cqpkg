@@ -1,5 +1,0 @@
-#!/bin/bash
-
-cp -f $(find ~ -name cqpkg_manager)/clone /usr/bin/clone
-cp -f $(find ~ -name cqpkg_manager)/compile /usr/bin/compile
-cp -f $(find ~ -name cqpkg_manager)/upload /usr/bin/upload
