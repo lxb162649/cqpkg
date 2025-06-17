@@ -2,7 +2,7 @@
 
 Name:           cqpkg_manager
 Version:        0.0.1
-Release:        4
+Release:        5
 Summary:        Manage CQ system software packages.
 
 License:        GPLv3+
@@ -11,6 +11,7 @@ Source0:        %{name}-%{version}.tar.gz
 Patch0:         cqos-fix-clone.patch
 Patch1:         cqos-fix-compile.patch
 Patch2:         cqos-func-add-chinese-man-page.patch
+Patch3:         cqos-func-improve-executable-files.patch
 
 Requires:  git 
 Requires:  yum-utils
@@ -31,6 +32,9 @@ make install DESTDIR=$RPM_BUILD_ROOT
 %{_mandir}/zh_CN/man1/*
 
 %changelog
+* Tue Jun 17 2025 Xuebing Li <lixuebing@cqsoftware.com.cn> - 0.0.1-5
+- Improve executable files (add color logs, optimize code structure, etc.).
+
 * Tue Jun 17 2025 Xuebing Li <lixuebing@cqsoftware.com.cn> - 0.0.1-4
 - Add chinese man page.
 
