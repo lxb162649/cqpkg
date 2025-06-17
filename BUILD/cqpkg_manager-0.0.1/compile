@@ -13,116 +13,129 @@ set -euo pipefail
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
 NC='\033[0m' # 恢复默认颜色
+
+#------------------------------ 日志函数 ------------------------------#
+log_info() {
+    echo -e "${GREEN}[INFO]${NC} $1"
+}
+
+log_warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1" >&2
+    exit 1
+}
 
 #------------------------------ 帮助信息 ------------------------------#
 show_help() {
-    echo -e "${GREEN}RPM包编译工具${NC}"
+    echo -e "${BLUE}RPM包编译工具${NC}"
     echo
     echo -e "${YELLOW}功能说明：${NC}"
-    echo "自动安装编译依赖、构建RPM包并展示结果"
-    echo "支持两种模式："
-    echo "  1. 全局模式：基于默认的 $HOME/rpmbuild 目录"
-    echo "  2. 本地模式：基于指定的源码包目录"
+    echo -e "  ${GREEN}•${NC} 自动安装编译依赖、构建RPM包并展示结果"
+    echo -e "  ${GREEN}•${NC} 支持两种模式："
+    echo "    1. 全局模式：基于默认的 $HOME/rpmbuild 目录"
+    echo "    2. 本地模式：基于指定的源码包目录"
     echo
     echo -e "${YELLOW}使用语法：${NC}"
-    echo "$(basename "$0") [选项] [路径名]"
+    echo "  $(basename "$0") [选项] [路径名]"
     echo
     echo -e "${YELLOW}选项：${NC}"
-    echo "  -ba          构建二进制和源码RPM包"
-    echo "  -bp          只执行到编译前阶段"
-    echo "  -bs          只构建源码RPM包"
-    echo "  -h, --help   显示此帮助信息"
+    echo -e "  ${GREEN}-ba${NC}        构建二进制和源码RPM包"
+    echo -e "  ${GREEN}-bp${NC}        只执行到编译前阶段"
+    echo -e "  ${GREEN}-bs${NC}        只构建源码RPM包"
+    echo -e "  ${GREEN}-h, --help${NC}   显示此帮助信息"
     echo
     echo -e "${YELLOW}参数：${NC}"
     echo "  [路径名]     可选，源码包目录名 (默认使用 $HOME/rpmbuild)"
     echo
-    echo -e "${YELLOW}示例(默认参数为 -ba -bp)：${NC}"
-    echo "1. 全局模式 (编译 $HOME/rpmbuild 中的SPEC文件)："
-    echo "   $(basename "$0")"
+    echo -e "${YELLOW}示例(默认参数为 -ba -bp):${NC}"
+    echo "  1. 全局模式 (编译 $HOME/rpmbuild 中的SPEC文件):"
+    echo "     $(basename "$0")"
     echo
-    echo "2. 本地模式 (编译指定目录中的包)："
-    echo "   $(basename "$0") felix-scr"
+    echo "  2. 本地模式 (编译指定目录中的包):"
+    echo "     $(basename "$0") felix-scr"
     echo
-    echo "3. 只构建源码RPM包："
-    echo "   $(basename "$0") -bs /path/to/package"
+    echo "  3. 只构建源码RPM包:"
+    echo "     $(basename "$0") -bs /path/to/package"
     echo
-    echo "4. 同时执行多种构建类型："
-    echo "   $(basename "$0") -ba -bs /path/to/package"
-
-}
-
-#------------------------------ 工具函数 ------------------------------#
-# 功能：显示错误信息并退出
-error_exit() {
-    echo -e "${RED}错误:${NC} $1" >&2
-    exit 1
+    echo "  4. 同时执行多种构建类型:"
+    echo "     $(basename "$0") -ba -bs /path/to/package"
+    exit 0
 }
 
 #------------------------------ 核心功能 ------------------------------#
 # 安装编译依赖
-install_deps() {
-    echo "正在安装编译依赖..."
-    if ! yum builddep -y "$SPEC_FILE" &>/dev/null; then
-        error_exit "安装依赖失败，请检查SPEC文件和网络连接"
+install_dependencies() {
+    log_info "正在安装编译依赖..."
+    
+    if ! yum builddep -y "$SPEC_FILE" &> /dev/null; then
+        log_error "安装依赖失败，请检查SPEC文件和网络连接"
     fi
-    echo -e "${GREEN}依赖安装完成${NC}"
+    log_info "依赖安装完成"
 }
 
 # 构建RPM包
-build_rpm() {
+build_rpm_package() {
     local build_type=$1
     local build_args=()
     
     # 设置自定义TOPDIR (如果不是全局模式)
     if [[ "$PKG_PATH" != "$HOME/rpmbuild" ]]; then
         build_args+=(-D "_topdir $PKG_PATH")
+        log_info "使用自定义TOPDIR: $PKG_PATH"
     fi
     
-    echo -e "\n${YELLOW}开始构建RPM包 (类型: $build_type)${NC}"
-    echo "SPEC文件: ${SPEC_FILE}"
+    log_info "开始构建RPM包 (类型: $build_type)"
+    log_info "SPEC文件: $(basename "$SPEC_FILE")"
     
     case "$build_type" in
         "ba")
+            log_info "构建二进制和源码RPM包..."
             rpmbuild -ba "${build_args[@]}" "$SPEC_FILE"
             ;;
         "bp")
+            log_info "执行到编译前阶段..."
             rpmbuild -bp "${build_args[@]}" "$SPEC_FILE"
             ;;
         "bs")
+            log_info "构建源码RPM包..."
             rpmbuild -bs "${build_args[@]}" "$SPEC_FILE"
             ;;
         *)
-            error_exit "未知的构建类型: $build_type"
+            log_error "未知的构建类型: $build_type"
             ;;
     esac
     
-    echo -e "${GREEN}构建完成 (类型: $build_type)${NC}"
+    log_info "构建完成 (类型: $build_type)"
 }
 
 # 展示构建结果
-show_results() {
+show_build_results() {
     local rpms_dir="${PKG_PATH}/RPMS"
     local srpms_dir="${PKG_PATH}/SRPMS"
     
-    echo -e "\n${YELLOW}构建结果:${NC}"
+    log_info "构建结果:"
     
     # 检查RPM目录
     if [[ ! -d "$rpms_dir" ]]; then
-        echo -e "${RED}警告: 未生成RPM文件目录${NC}"
+        log_warn "未生成RPM文件目录"
         return 1
     fi
     
     # 显示各架构的RPM包
     for arch in noarch x86_64; do
         local arch_dir="$rpms_dir/$arch"
-        echo -e "${GREEN}== $arch ==${NC}"
+        echo -e "${BLUE}== $arch ==${NC}"
         
         if [[ -d "$arch_dir" && "$(ls -A "$arch_dir" 2>/dev/null)" ]]; then
             local count=$(ls -1 "$arch_dir" | wc -l)
             echo -e "找到 ${YELLOW}$count${NC} 个RPM包:"
             ls -1 "$arch_dir" | while read -r file; do
-                echo "  - $file"
+                echo "$arch_dir/$file"
             done
         else
             echo "  无"
@@ -131,118 +144,115 @@ show_results() {
     done
     
     # 显示源码RPM包
-    echo -e "${GREEN}== 源码包 ==${NC}"
+    echo -e "${BLUE}== 源码包 ==${NC}"
     if [[ -d "$srpms_dir" && "$(ls -A "$srpms_dir" 2>/dev/null)" ]]; then
         local count=$(ls -1 "$srpms_dir" | wc -l)
         echo -e "找到 ${YELLOW}$count${NC} 个源码RPM包:"
         ls -1 "$srpms_dir" | while read -r file; do
-            echo "  - $file"
+            echo "$srpms_dir/$file"
         done
     else
         echo "  无"
     fi
+
+    return 0
 }
 
 #------------------------------ 主函数 ------------------------------#
 main() {
     # 初始化变量
-    local -a BUILD_TYPES=("ba" "bp")   # 存储要执行的构建类型
-    local PKG_NAME=""
+    local -a BUILD_TYPES=("ba" "bp")  # 默认构建类型
     local PKG_PATH=""
-    flag=0
+    local SPEC_FILE=""
+    
     # 解析命令行参数
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -h|--help)
                 show_help
-                exit 0
                 ;;
             -ba|-bp|-bs)
-                # 移除默认构建类型
-                if [[ flag -eq "0" ]]; then
-                    flag=1
+                # 移除默认构建类型并添加新类型
+                if [[ ${#BUILD_TYPES[@]} -eq 2 ]]; then
                     BUILD_TYPES=()
-                    echo "移除默认构建类型"
+                    log_info "移除默认构建类型，使用自定义类型"
                 fi    
-                # 添加新的构建类型
                 local build_type="${1#-}"  # 移除前缀'-'
                 BUILD_TYPES+=("$build_type")
                 ;;
             *)
-                # 如果参数不是选项，则认为是PKG_NAME
-                if [[ -z "$PKG_NAME" ]]; then
-                    PKG_NAME=$1
+                # 设置工作目录
+                if [[ -z "$PKG_PATH" ]]; then
+                    if ! PKG_PATH="$(realpath -e "$1" 2>/dev/null)"; then
+                        log_error "错误：请提供有效的路径参数" >&2
+                    fi
                 else
-                    error_exit "重复的路径参数 '$1'"
+                    log_error "重复的路径参数 '$1'"
                 fi
                 ;;
         esac
         shift
     done
-
+    
     # 去重构建类型
-    local -a UNIQUE_BUILD_TYPES=()
+    local -a UNIQUE_TYPES=()
     for type in "${BUILD_TYPES[@]}"; do
-        if [[ ! " ${UNIQUE_BUILD_TYPES[*]} " =~ " ${type} " ]]; then
-            UNIQUE_BUILD_TYPES+=("$type")
+        if [[ ! " ${UNIQUE_TYPES[*]} " =~ " ${type} " ]]; then
+            UNIQUE_TYPES+=("$type")
         fi
     done
-    BUILD_TYPES=("${UNIQUE_BUILD_TYPES[@]}")
+    BUILD_TYPES=("${UNIQUE_TYPES[@]}")
+    
+    # 验证构建类型
+    for type in "${BUILD_TYPES[@]}"; do
+        if [[ ! "$type" =~ ^(ba|bp|bs)$ ]]; then
+            log_error "不支持的构建类型: $type"
+        fi
+    done
     
     # 确定工作目录
-    if [[ -z "$PKG_NAME" ]]; then
+    if [[ -z "$PKG_PATH" ]]; then
         PKG_PATH="$HOME/rpmbuild"
-        echo -e "${YELLOW}使用全局模式:${NC} $PKG_PATH"
+        log_info "使用全局模式: $PKG_PATH"
     else
-        PKG=$(basename "$PKG_NAME")
-        if ! echo "$PKG_NAME" | grep -q "/"; then
-            PKG_PATH="$(pwd)/$PKG"
-        else
-            PKG_PATH="$PKG_NAME"
-        fi
-        echo -e "${YELLOW}使用本地模式:${NC} $PKG_PATH"
-    fi
-    
-    # 检查目录是否存在
-    if [[ ! -d "$PKG_PATH" ]]; then
-        error_exit "目录不存在: $PKG_PATH"
+        log_info "使用本地模式: $PKG_PATH"
     fi
     
     # 查找SPEC文件
     local spec_files=("$PKG_PATH/SPECS"/*.spec)
     if [[ ${#spec_files[@]} -eq 0 ]]; then
-        error_exit "未找到SPEC文件: $PKG_PATH/SPECS/*.spec"
+        log_error "未找到SPEC文件: $PKG_PATH/SPECS/*.spec"
     elif [[ ${#spec_files[@]} -gt 1 ]]; then
-        echo -e "${YELLOW}警告: 找到多个SPEC文件，使用第一个:${NC}"
+        log_warn "找到多个SPEC文件，使用第一个:"
         for file in "${spec_files[@]}"; do
             echo "  - $(basename "$file")"
         done
     fi
     
     SPEC_FILE="${spec_files[0]}"
-    echo -e "${YELLOW}使用SPEC文件:${NC} $(basename "$SPEC_FILE")"
+    log_info "使用SPEC文件: $(basename "$SPEC_FILE")"
     
     # 切换到工作目录
-    cd "$PKG_PATH" || error_exit "无法切换到目录: $PKG_PATH"
+    cd "$PKG_PATH" || log_error "无法切换到目录: $PKG_PATH"
     
     # 安装依赖（只需要安装一次）
-    install_deps
+    install_dependencies
     
     # 执行所有构建类型
-    echo -e "\n${YELLOW}将要执行的构建类型:${NC} ${BUILD_TYPES[*]}"
+    log_info "将要执行的构建类型: ${BUILD_TYPES[*]}"
     
     for build_type in "${BUILD_TYPES[@]}"; do
-        build_rpm "$build_type"
+        build_rpm_package "$build_type"
     done
     
     # 显示结果 (仅对包含"ba"的构建)
     if [[ " ${BUILD_TYPES[*]} " =~ " ba " ]]; then
-        show_results
+        show_build_results
     else
-        echo -e "\n${YELLOW}注意: 未执行 '-ba' 构建，因此不显示结果${NC}"
+        log_info "注意: 未执行 '-ba' 构建，因此不显示结果"
     fi
     
-    echo -e "\n${GREEN}所有操作已完成${NC}"
+    log_info "${GREEN}所有操作已完成${NC}"
 }
 
 # 执行主函数
