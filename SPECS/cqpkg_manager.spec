@@ -1,18 +1,13 @@
 %global debug_package %{nil}
 
 Name:           cqpkg_manager
-Version:        0.0.1
-Release:        6
+Version:        1.0.1
+Release:        1
 Summary:        Manage CQ system software packages.
 
 License:        GPLv3+
 URL:            https://github.com/lxb162649/cqpkg
 Source0:        %{name}-%{version}.tar.gz
-Patch0:         cqos-fix-clone.patch
-Patch1:         cqos-fix-compile.patch
-Patch2:         cqos-func-add-chinese-man-page.patch
-Patch3:         cqos-func-improve-executable-files.patch
-Patch4:         cqos-fix-clone-cq-pkg-rpmbuild.patch
 
 Requires:  git 
 Requires:  yum-utils
@@ -33,6 +28,9 @@ make install DESTDIR=$RPM_BUILD_ROOT
 %{_mandir}/zh_CN/man1/*
 
 %changelog
+* Tue Jun 17 2025 Xuebing Li <lixuebing@cqsoftware.com.cn> - 1.0.1-1
+- Upgrade version to 1.0.1.
+
 * Tue Jun 17 2025 Xuebing Li <lixuebing@cqsoftware.com.cn> - 0.0.1-6
 - Put the cq package in the rpmbuild directory in clone.
 
