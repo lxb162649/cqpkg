@@ -1,0 +1,2371 @@
+diff -Nuar cqpkg_manager-1.0.1/clone cqpkg_manager-1.0.1-diff/clone
+--- cqpkg_manager-1.0.1/clone	2025-06-17 14:32:16.000000000 +0800
++++ cqpkg_manager-1.0.1-diff/clone	1970-01-01 08:00:00.000000000 +0800
+@@ -1,358 +0,0 @@
+-#!/bin/bash
+-
+-# 颜色定义
+-RED='\033[0;31m'
+-GREEN='\033[0;32m'
+-YELLOW='\033[0;33m'
+-BLUE='\033[0;34m'
+-NC='\033[0m' # No Color
+-
+-# 日志函数
+-log_info() {
+-    echo -e "${GREEN}[INFO]${NC} $1"
+-}
+-
+-log_warn() {
+-    echo -e "${YELLOW}[WARN]${NC} $1"
+-}
+-
+-log_error() {
+-    echo -e "${RED}[ERROR]${NC} $1" >&2
+-}
+-
+-# 帮助信息
+-show_help() {
+-    echo -e "${BLUE}功能说明：${NC}"
+-    echo -e "  ${GREEN}•${NC} 从指定仓库克隆软件包源码并配置RPM构建环境"
+-    echo -e "  ${GREEN}•${NC} 支持欧拉（OpenEuler）、龙蜥（Anolis OS）和CQ内部仓库"
+-    echo -e "  ${GREEN}•${NC} 自动生成SOURCEINFO.yaml元数据文件"
+-    echo
+-    echo -e "${BLUE}使用语法：${NC}"
+-    echo -e "  clone ${YELLOW}<包名>${NC} [分支名]"
+-    echo
+-    echo -e "${BLUE}参数说明：${NC}"
+-    echo -e "  ${YELLOW}<包名>${NC}        必需，软件包名称（如：httpd）"
+-    echo
+-    echo -e "${BLUE}选项：${NC}"
+-    echo -e "  ${YELLOW}-h, --help${NC}    显示此帮助信息"
+-    echo
+-    echo -e "${BLUE}操作流程：${NC}"
+-    echo -e "  ${GREEN}1.${NC} 输入仓库类型（a=欧拉, b=龙蜥, 其他=CQ内部仓库）"
+-    echo -e "  ${GREEN}2.${NC} 输入分支名（默认：master）"
+-    echo -e "  ${GREEN}3.${NC} 自动克隆代码"
+-    echo -e "  ${GREEN}4.${NC} 配置$HOME/rpmbuild目录结构(y/n)"
+-    echo -e "  ${GREEN}5.${NC} 生成包含开源协议、上游信息的SOURCEINFO.yaml(欧拉或龙蜥仓库)"
+-    echo
+-    echo -e "${BLUE}示例：${NC}"
+-    echo -e "  ${GREEN}1.${NC} 克隆httpd"
+-    echo -e "     clone httpd"
+-    echo
+-}
+-
+-# 清理旧目录
+-clean_env() {
+-    log_info "正在清理旧环境..."
+-    if [[ -d "$PKG_PATH" ]]; then
+-        rm -rf "$PKG_PATH" || { log_error "清理目录 $PKG_PATH 失败"; return 1; }
+-    fi
+-    
+-    if [[ "$CREATE_RPMBUILD_DIR" == "y" && -d "$HOME/rpmbuild" ]]; then
+-        rm -rf "$HOME/rpmbuild" || { log_error "清理目录 $HOME/rpmbuild 失败"; return 1; }
+-    fi
+-    
+-    return 0
+-}
+-
+-# 克隆仓库函数
+-clone_repo() {
+-    local upstream_url=$1
+-    log_info "正在克隆仓库: $upstream_url (分支: $CLONE_BRANCH)"
+-    
+-    if ! git clone -b "$CLONE_BRANCH" "$upstream_url" "$PKG_PATH"; then
+-        log_error "克隆失败，清理残留文件..."
+-        if [[ -d "$PKG_PATH" ]]; then
+-            rm -rf "$PKG_PATH"
+-        fi
+-        return 1
+-    fi
+-    
+-    log_info "克隆成功"
+-    return 0
+-}
+-
+-# 移动文件到rpmbuild目录
+-mv_files() {
+-    log_info "正在创建工作路径目录结构 $WORK_PATH ..."
+-    
+-    mkdir -p "$WORK_PATH"/{SPECS,SOURCES} || { log_error "创建工作路径目录结构失败"; return 1; }
+-
+-    log_info "正在整理文件到 $WORK_PATH ..."
+-    
+-    # 移动SPEC文件
+-    if [[ -n $(find "$PKG_PATH" -maxdepth 1 -name "*.spec" -print -quit) ]]; then
+-        mv "$PKG_PATH"/*.spec "$WORK_PATH/SPECS/" || { log_error "移动SPEC文件失败"; return 1; }
+-        log_info "移动SPEC文件成功"
+-    else
+-        log_warn "未找到SPEC文件"
+-    fi
+-    
+-    # 移动资源文件
+-    if [[ -n $(find "$PKG_PATH" -maxdepth 1 -type f ! -name ".*" -print -quit) ]]; then
+-        find "$PKG_PATH" -maxdepth 1 -type f ! -name ".*" -exec mv {} "$WORK_PATH/SOURCES/" \; || { log_error "移动资源文件失败"; return 1; }
+-        log_info "移动资源文件成功"
+-    else
+-        log_warn "未找到可移动的资源文件"
+-    fi
+-    
+-    # 处理.gitignore
+-    if [[ "$CREATE_RPMBUILD_DIR" == "y" ]]; then
+-        if [[ -f "$PKG_PATH/.gitignore" ]]; then
+-            mv "$PKG_PATH/.gitignore" "$WORK_PATH" || { log_error "移动.gitignore文件失败"; return 1; }
+-            log_info "移动.gitignore文件成功"
+-        fi
+-        rm -rf "$PKG_PATH"
+-        log_info "删除原克隆目录"
+-    else
+-        if [[ -d "$WORK_PATH/.git" ]]; then
+-            rm -rf "$WORK_PATH/.git"
+-            log_info "删除.git目录"
+-        fi
+-    fi
+-
+-    log_info "整理文件完成"
+-    return 0
+-}
+-
+-# 创建.gitignore文件
+-create_gitignore() {
+-    log_info "正在创建.gitignore文件..."
+-    
+-    cat > "$PKG_PATH/.gitignore" << EOF
+-#rpm
+-RPMS
+-SRPMS
+-BUILDROOT
+-#vscode
+-.vscode 
+-EOF
+-    
+-    if [[ $? -eq 0 ]]; then
+-        log_info ".gitignore文件创建成功"
+-        return 0
+-    else
+-        log_error ".gitignore文件创建失败"
+-        return 1
+-    fi
+-}
+-
+-# 生成元数据文件
+-generate_metadata() {
+-    cd "$WORK_PATH" || { log_error "无法进入目录 $WORK_PATH"; return 1; }
+-    
+-    local spec_file=$(ls SPECS/*.spec 2>/dev/null)
+-    
+-    if [[ -z "$spec_file" ]]; then
+-        log_error "未找到SPEC文件"
+-        return 1
+-    fi
+-    
+-    local url=$(awk '/^(URL|Url):/ {print $2}' "$spec_file")
+-    local license=$(grep -oP 'License:\s*\K.*' "$spec_file" | tr '\n' ' ')
+-    
+-    # 确定上游仓库URL
+-    local upstream_url
+-    if [[ "$REPO_TYPE" == "a" ]]; then
+-        upstream_url="https://gitee.com/src-openeuler/${PKG_NAME}.git"
+-    else
+-        upstream_url="https://gitee.com/src-anolis-os/${PKG_NAME}.git"
+-    fi
+-    
+-    # 写入YAML
+-    cat <<EOF > SOURCEINFO.yaml
+-license:
+-  - ${license}
+-upstream:
+-  src: ${upstream_url}
+-  branch: ${CLONE_BRANCH}
+-origin:
+-  src: ${url:-"未指定上游地址"}
+-EOF
+-
+-    log_info "元数据文件生成完成 $(pwd)/SOURCEINFO.yaml"
+-    return 0
+-}
+-
+-# 验证输入
+-validate_input() {
+-    if [[ -z "$PKG_NAME" ]]; then
+-        log_error "缺少包名参数"
+-        show_help
+-        return 1
+-    fi
+-    
+-    # 验证包名是否符合命名规范（简化版）
+-    if [[ ! "$PKG_NAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+-        log_error "包名包含非法字符，只能使用字母、数字、连字符和下划线"
+-        return 1
+-    fi
+-    
+-    return 0
+-}
+-
+-# 克隆CQ内部仓库
+-clone_cq_repo() {
+-    # CQ内部仓库列表（按优先级排序）
+-    local cq_upstream_urls=(
+-        "http://192.168.10.152/cyos-security/public/$PKG_NAME.git"
+-        "http://192.168.10.152/cyos-security/protected/$PKG_NAME.git"
+-        "http://192.168.10.152/cyos-security/private/$PKG_NAME.git"
+-        "http://192.168.10.152/cyos-security/trash/$PKG_NAME.git"
+-        "http://192.168.10.152/cyos-security/iso/$PKG_NAME.git"
+-        "http://192.168.10.152/cyos-security/$PKG_NAME.git"
+-        "http://192.168.10.152/cyos-security/toolkits/$PKG_NAME.git"
+-        "http://192.168.10.152/cyos-security/transition/python3.11/$PKG_NAME.git"
+-        "http://192.168.10.152/cyos-security/transition/deb_to_rpm/$PKG_NAME.git"
+-        "http://192.168.10.152/cyos-security/transition/xfce/$PKG_NAME.git"
+-        "http://192.168.10.152/cyos-security/transition/$PKG_NAME.git"
+-        "http://192.168.10.152/lixuebing/$PKG_NAME.git"
+-    )
+-    
+-    log_info "尝试从CQ内部仓库克隆..."
+-    
+-    local cloned=false
+-    for upstream_url in "${cq_upstream_urls[@]}"; do
+-        log_info "检查仓库: $upstream_url"
+-        if git ls-remote "$upstream_url" &>/dev/null; then
+-            log_info "找到仓库，开始克隆..."
+-            if clone_repo "$upstream_url"; then
+-                cloned=true
+-                break
+-            fi
+-        fi
+-    done
+-    
+-    if [[ "$cloned" == false ]]; then
+-        log_error "未在任何CQ内部仓库中找到 $PKG_NAME"
+-        return 1
+-    fi
+-    
+-    return 0
+-}
+-
+-main() {
+-    # 初始化变量
+-    PKG_NAME=""
+-    DEFAULT_BRANCH="master"
+-    CLONE_BRANCH="$DEFAULT_BRANCH"
+-    REPO_TYPE=""
+-    CREATE_RPMBUILD_DIR=""
+-    PKG_PATH=""
+-    WORK_PATH=""
+-    
+-    # 解析命令行参数（支持选项在任意位置）
+-    while [[ $# -gt 0 ]]; do
+-        case "$1" in
+-            -h|--help)
+-                show_help
+-                exit 0
+-                ;;
+-            *)
+-                # 如果参数不是选项，则认为是PKG_NAME
+-                if [[ -z "$PKG_NAME" ]]; then
+-                    PKG_NAME=$1
+-                else
+-                    # 如果已经有PKG_NAME，则认为是分支名
+-                    CLONE_BRANCH=$1
+-                fi
+-                ;;
+-        esac
+-        shift
+-    done
+-    
+-    # 验证输入
+-    if ! validate_input; then
+-        exit 1
+-    fi
+-    
+-    # 获取仓库类型
+-    read -p "请选择仓库类型（a=欧拉, b=龙蜥, 其他=CQ内部仓库）: " REPO_TYPE
+-    
+-    # 获取分支名
+-    read -p "请输入克隆分支（默认 $DEFAULT_BRANCH）: " input_branch
+-    if [[ -n "$input_branch" ]]; then
+-        CLONE_BRANCH="$input_branch"
+-    fi
+-    
+-    PKG_PATH="$(pwd)/$PKG_NAME"
+-    
+-    # 是否创建rpmbuild目录
+-    read -p "是否将代码放入$HOME/rpmbuild目录（输入y放入此目录，默认放到 $PKG_PATH 目录）: " CREATE_RPMBUILD_DIR
+-    
+-    # 设置工作路径
+-    if [[ "$CREATE_RPMBUILD_DIR" == "y" ]]; then
+-        WORK_PATH="$HOME/rpmbuild"  # 放入$HOME/rpmbuild目录
+-    else
+-        WORK_PATH="$PKG_PATH"  # 保持原目录结构
+-    fi
+-
+-    # 清理环境
+-    if ! clean_env; then
+-        exit 1
+-    fi
+-    
+-    # 根据仓库类型克隆
+-    case "$REPO_TYPE" in
+-        a)
+-            local upstream_url="https://gitee.com/src-openeuler/${PKG_NAME}.git"
+-            if ! clone_repo "$upstream_url"; then
+-                log_error "欧拉仓库克隆失败"
+-                exit 1
+-            fi
+-            log_info "欧拉仓库克隆成功"
+-            ;;
+-        b)
+-            local upstream_url="https://gitee.com/src-anolis-os/${PKG_NAME}.git"
+-            if ! clone_repo "$upstream_url"; then
+-                log_error "龙蜥仓库克隆失败"
+-                exit 1
+-            fi
+-            log_info "龙蜥仓库克隆成功"
+-            ;;
+-        *)
+-            if ! clone_cq_repo; then
+-                exit 1
+-            fi
+-            log_info "CQ内部仓库克隆成功!"
+-            
+-            if [[ "$CREATE_RPMBUILD_DIR" == "y" ]]; then
+-                log_info "正在将 $PKG_NAME 移动到工作目录 $WORK_PATH ..."
+-                mv "$PKG_PATH" "$WORK_PATH"
+-                log_info "成功将 $PKG_NAME 移动到工作目录 $WORK_PATH!"
+-            fi
+-            exit 0
+-            ;;
+-    esac
+-    
+-    # 检查是否需要创建.gitignore
+-    if [[ ! -f "$PKG_PATH/.gitignore" ]] && [[ -n $(find "$PKG_PATH" -name '*.spec' &>/dev/null) ]]; then
+-        if ! create_gitignore; then
+-            exit 1
+-        fi
+-    fi
+-    
+-
+-    # 移动文件
+-    if ! mv_files; then
+-        exit 1
+-    fi
+-    
+-    # 生成元数据
+-    if ! generate_metadata; then
+-        log_error "元数据生成失败"
+-        exit 1
+-    fi
+-    
+-    log_info "操作完成！RPM构建环境已配置到 $WORK_PATH"
+-}
+-
+-main "$@"    
+diff -Nuar cqpkg_manager-1.0.1/compile cqpkg_manager-1.0.1-diff/compile
+--- cqpkg_manager-1.0.1/compile	2025-06-17 14:32:16.000000000 +0800
++++ cqpkg_manager-1.0.1-diff/compile	1970-01-01 08:00:00.000000000 +0800
+@@ -1,261 +0,0 @@
+-#!/bin/bash
+-#===============================================================================
+-# 脚本名称：compile
+-# 功能描述：自动安装编译依赖、构建RPM包并展示结果
+-# 支持模式：全局模式($HOME/rpmbuild)和本地模式(指定目录)
+-#===============================================================================
+-
+-# 启用错误处理
+-set -euo pipefail
+-
+-#------------------------------ 配置选项 ------------------------------#
+-# 颜色定义
+-RED='\033[0;31m'
+-GREEN='\033[0;32m'
+-YELLOW='\033[0;33m'
+-BLUE='\033[0;34m'
+-NC='\033[0m' # 恢复默认颜色
+-
+-#------------------------------ 日志函数 ------------------------------#
+-log_info() {
+-    echo -e "${GREEN}[INFO]${NC} $1"
+-}
+-
+-log_warn() {
+-    echo -e "${YELLOW}[WARN]${NC} $1"
+-}
+-
+-log_error() {
+-    echo -e "${RED}[ERROR]${NC} $1" >&2
+-    exit 1
+-}
+-
+-#------------------------------ 帮助信息 ------------------------------#
+-show_help() {
+-    echo -e "${BLUE}RPM包编译工具${NC}"
+-    echo
+-    echo -e "${YELLOW}功能说明：${NC}"
+-    echo -e "  ${GREEN}•${NC} 自动安装编译依赖、构建RPM包并展示结果"
+-    echo -e "  ${GREEN}•${NC} 支持两种模式："
+-    echo "    1. 全局模式：基于默认的 $HOME/rpmbuild 目录"
+-    echo "    2. 本地模式：基于指定的源码包目录"
+-    echo
+-    echo -e "${YELLOW}使用语法：${NC}"
+-    echo "  $(basename "$0") [选项] [路径名]"
+-    echo
+-    echo -e "${YELLOW}选项：${NC}"
+-    echo -e "  ${GREEN}-ba${NC}        构建二进制和源码RPM包"
+-    echo -e "  ${GREEN}-bp${NC}        只执行到编译前阶段"
+-    echo -e "  ${GREEN}-bs${NC}        只构建源码RPM包"
+-    echo -e "  ${GREEN}-h, --help${NC}   显示此帮助信息"
+-    echo
+-    echo -e "${YELLOW}参数：${NC}"
+-    echo "  [路径名]     可选，源码包目录名 (默认使用 $HOME/rpmbuild)"
+-    echo
+-    echo -e "${YELLOW}示例(默认参数为 -ba -bp):${NC}"
+-    echo "  1. 全局模式 (编译 $HOME/rpmbuild 中的SPEC文件):"
+-    echo "     $(basename "$0")"
+-    echo
+-    echo "  2. 本地模式 (编译指定目录中的包):"
+-    echo "     $(basename "$0") felix-scr"
+-    echo
+-    echo "  3. 只构建源码RPM包:"
+-    echo "     $(basename "$0") -bs /path/to/package"
+-    echo
+-    echo "  4. 同时执行多种构建类型:"
+-    echo "     $(basename "$0") -ba -bs /path/to/package"
+-    exit 0
+-}
+-
+-#------------------------------ 核心功能 ------------------------------#
+-# 安装编译依赖
+-install_dependencies() {
+-    log_info "正在安装编译依赖..."
+-    
+-    if ! yum builddep -y "$SPEC_FILE" &> /dev/null; then
+-        log_error "安装依赖失败，请检查SPEC文件和网络连接"
+-    fi
+-    log_info "依赖安装完成"
+-}
+-
+-# 构建RPM包
+-build_rpm_package() {
+-    local build_type=$1
+-    local build_args=()
+-    
+-    # 设置自定义TOPDIR (如果不是全局模式)
+-    if [[ "$PKG_PATH" != "$HOME/rpmbuild" ]]; then
+-        build_args+=(-D "_topdir $PKG_PATH")
+-        log_info "使用自定义TOPDIR: $PKG_PATH"
+-    fi
+-    
+-    log_info "开始构建RPM包 (类型: $build_type)"
+-    log_info "SPEC文件: $(basename "$SPEC_FILE")"
+-    
+-    case "$build_type" in
+-        "ba")
+-            log_info "构建二进制和源码RPM包..."
+-            rpmbuild -ba "${build_args[@]}" "$SPEC_FILE"
+-            ;;
+-        "bp")
+-            log_info "执行到编译前阶段..."
+-            rpmbuild -bp "${build_args[@]}" "$SPEC_FILE"
+-            ;;
+-        "bs")
+-            log_info "构建源码RPM包..."
+-            rpmbuild -bs "${build_args[@]}" "$SPEC_FILE"
+-            ;;
+-        *)
+-            log_error "未知的构建类型: $build_type"
+-            ;;
+-    esac
+-    
+-    log_info "构建完成 (类型: $build_type)"
+-}
+-
+-# 展示构建结果
+-show_build_results() {
+-    local rpms_dir="${PKG_PATH}/RPMS"
+-    local srpms_dir="${PKG_PATH}/SRPMS"
+-    
+-    log_info "构建结果:"
+-    
+-    # 检查RPM目录
+-    if [[ ! -d "$rpms_dir" ]]; then
+-        log_warn "未生成RPM文件目录"
+-        return 1
+-    fi
+-    
+-    # 显示各架构的RPM包
+-    for arch in noarch x86_64; do
+-        local arch_dir="$rpms_dir/$arch"
+-        echo -e "${BLUE}== $arch ==${NC}"
+-        
+-        if [[ -d "$arch_dir" && "$(ls -A "$arch_dir" 2>/dev/null)" ]]; then
+-            local count=$(ls -1 "$arch_dir" | wc -l)
+-            echo -e "找到 ${YELLOW}$count${NC} 个RPM包:"
+-            ls -1 "$arch_dir" | while read -r file; do
+-                echo "$arch_dir/$file"
+-            done
+-        else
+-            echo "  无"
+-        fi
+-        echo
+-    done
+-    
+-    # 显示源码RPM包
+-    echo -e "${BLUE}== 源码包 ==${NC}"
+-    if [[ -d "$srpms_dir" && "$(ls -A "$srpms_dir" 2>/dev/null)" ]]; then
+-        local count=$(ls -1 "$srpms_dir" | wc -l)
+-        echo -e "找到 ${YELLOW}$count${NC} 个源码RPM包:"
+-        ls -1 "$srpms_dir" | while read -r file; do
+-            echo "$srpms_dir/$file"
+-        done
+-    else
+-        echo "  无"
+-    fi
+-
+-    return 0
+-}
+-
+-#------------------------------ 主函数 ------------------------------#
+-main() {
+-    # 初始化变量
+-    local -a BUILD_TYPES=("ba" "bp")  # 默认构建类型
+-    local PKG_PATH=""
+-    local SPEC_FILE=""
+-    
+-    # 解析命令行参数
+-    while [[ $# -gt 0 ]]; do
+-        case "$1" in
+-            -h|--help)
+-                show_help
+-                ;;
+-            -ba|-bp|-bs)
+-                # 移除默认构建类型并添加新类型
+-                if [[ ${#BUILD_TYPES[@]} -eq 2 ]]; then
+-                    BUILD_TYPES=()
+-                    log_info "移除默认构建类型，使用自定义类型"
+-                fi    
+-                local build_type="${1#-}"  # 移除前缀'-'
+-                BUILD_TYPES+=("$build_type")
+-                ;;
+-            *)
+-                # 设置工作目录
+-                if [[ -z "$PKG_PATH" ]]; then
+-                    if ! PKG_PATH="$(realpath -e "$1" 2>/dev/null)"; then
+-                        log_error "错误：请提供有效的路径参数" >&2
+-                    fi
+-                else
+-                    log_error "重复的路径参数 '$1'"
+-                fi
+-                ;;
+-        esac
+-        shift
+-    done
+-    
+-    # 去重构建类型
+-    local -a UNIQUE_TYPES=()
+-    for type in "${BUILD_TYPES[@]}"; do
+-        if [[ ! " ${UNIQUE_TYPES[*]} " =~ " ${type} " ]]; then
+-            UNIQUE_TYPES+=("$type")
+-        fi
+-    done
+-    BUILD_TYPES=("${UNIQUE_TYPES[@]}")
+-    
+-    # 验证构建类型
+-    for type in "${BUILD_TYPES[@]}"; do
+-        if [[ ! "$type" =~ ^(ba|bp|bs)$ ]]; then
+-            log_error "不支持的构建类型: $type"
+-        fi
+-    done
+-    
+-    # 确定工作目录
+-    if [[ -z "$PKG_PATH" ]]; then
+-        PKG_PATH="$HOME/rpmbuild"
+-        log_info "使用全局模式: $PKG_PATH"
+-    else
+-        log_info "使用本地模式: $PKG_PATH"
+-    fi
+-    
+-    # 查找SPEC文件
+-    local spec_files=("$PKG_PATH/SPECS"/*.spec)
+-    if [[ ${#spec_files[@]} -eq 0 ]]; then
+-        log_error "未找到SPEC文件: $PKG_PATH/SPECS/*.spec"
+-    elif [[ ${#spec_files[@]} -gt 1 ]]; then
+-        log_warn "找到多个SPEC文件，使用第一个:"
+-        for file in "${spec_files[@]}"; do
+-            echo "  - $(basename "$file")"
+-        done
+-    fi
+-    
+-    SPEC_FILE="${spec_files[0]}"
+-    log_info "使用SPEC文件: $(basename "$SPEC_FILE")"
+-    
+-    # 切换到工作目录
+-    cd "$PKG_PATH" || log_error "无法切换到目录: $PKG_PATH"
+-    
+-    # 安装依赖（只需要安装一次）
+-    install_dependencies
+-    
+-    # 执行所有构建类型
+-    log_info "将要执行的构建类型: ${BUILD_TYPES[*]}"
+-    
+-    for build_type in "${BUILD_TYPES[@]}"; do
+-        build_rpm_package "$build_type"
+-    done
+-    
+-    # 显示结果 (仅对包含"ba"的构建)
+-    if [[ " ${BUILD_TYPES[*]} " =~ " ba " ]]; then
+-        show_build_results
+-    else
+-        log_info "注意: 未执行 '-ba' 构建，因此不显示结果"
+-    fi
+-    
+-    log_info "${GREEN}所有操作已完成${NC}"
+-}
+-
+-# 执行主函数
+-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+-    main "$@"
+-fi
+\ 文件尾没有换行符
+diff -Nuar cqpkg_manager-1.0.1/Makefile cqpkg_manager-1.0.1-diff/Makefile
+--- cqpkg_manager-1.0.1/Makefile	2025-06-17 14:32:16.000000000 +0800
++++ cqpkg_manager-1.0.1-diff/Makefile	2025-06-17 17:15:53.090569108 +0800
+@@ -6,10 +6,10 @@
+ MANDIR = $(PREFIX)/share/man/zh_CN/man1
+ 
+ # 明确可执行文件列表
+-BIN_FILES := clone compile upload
++BIN_FILES := $(wildcard usr/bin/*)
+ 
+ # man手册文件列表
+-MAN_FILES := $(wildcard man/zh_CN/man1/*.1)
++MAN_FILES := $(wildcard usr/share/man/zh_CN/man1/*.1)
+ 
+ # 安装工具（可执行文件755权限，man手册644权限）
+ INSTALL_BIN = install -Dm755
+@@ -25,8 +25,8 @@
+ 	@echo "安装可执行文件到 $(DESTDIR)$(BINDIR)..."
+ 	@mkdir -p $(DESTDIR)$(BINDIR)
+ 	@for file in $(BIN_FILES); do \
+-		$(INSTALL_BIN) $$file $(DESTDIR)$(BINDIR)/$$file; \
+-		echo "已安装 $$file 到 $(DESTDIR)$(BINDIR)"; \
++		$(INSTALL_BIN) $$file $(DESTDIR)$(BINDIR)/$$(basename $$file); \
++		echo "已安装 $$(basename $$file) 到 $(DESTDIR)$(BINDIR)"; \
+ 	done
+ 
+ # 安装man手册到MAN_DIR
+@@ -35,7 +35,7 @@
+ 	@mkdir -p $(DESTDIR)$(MANDIR)
+ 	@for manpage in $(MAN_FILES); do \
+ 		$(INSTALL_MAN) $$manpage $(DESTDIR)$(MANDIR)/$$(basename $$manpage); \
+-		echo "已安装 $$manpage:$$(basename $$manpage) 到 $(DESTDIR)$(MANDIR)"; \
++		echo "已安装 $$(basename $$manpage) 到 $(DESTDIR)$(MANDIR)"; \
+ 	done
+ 	@if [ -z "$(DESTDIR)" ]; then $(MANDOC) -q; fi  # 非RPM模式时更新索引
+ 
+@@ -43,9 +43,10 @@
+ uninstall:
+ 	@echo "从 $(DESTDIR)$(BINDIR) 卸载可执行文件..."
+ 	@for file in $(BIN_FILES); do \
+-		if [ -f $(DESTDIR)$(BINDIR)/$$file ]; then \
+-			rm -f $(DESTDIR)$(BINDIR)/$$file; \
+-			echo "已删除 $(DESTDIR)$(BINDIR)/$$file"; \
++		file=$(DESTDIR)$(BINDIR)/$$(basename $$file)
++		if [ -f $$file ]; then \
++			rm -f $$file; \
++			echo "已删除 $$file"; \
+ 		fi; \
+ 	done
+ 	
+
+diff -Nuar cqpkg_manager-1.0.1/man/zh_CN/man1/clone.1 cqpkg_manager-1.0.1-diff/man/zh_CN/man1/clone.1
+--- cqpkg_manager-1.0.1/man/zh_CN/man1/clone.1	2025-06-17 14:32:16.000000000 +0800
++++ cqpkg_manager-1.0.1-diff/man/zh_CN/man1/clone.1	1970-01-01 08:00:00.000000000 +0800
+@@ -1,41 +0,0 @@
+-.\" 请勿修改此文件！它是为cqpkg_manager生成的
+-.TH CLONE "1" "2025-06-16" "cqpkg_manager" "用户命令"
+-.SH 名称
+-clone \- 从指定仓库克隆软件包源码并配置RPM构建环境
+-.SH 简介
+-.B clone
+-\fI\,包名\/\fR
+-.SH 说明
+-.\" 在此处添加任何其他描述
+-.PP
+-从指定仓库克隆软件包源码并自动配置RPM构建环境，支持欧拉（OpenEuler）、龙蜥（Anolis OS）和CQ内部仓库，生成包含开源协议和上游信息的SOURCEINFO.yaml元数据文件。
+-.SS "操作流程"
+-.TP
+-1. 输入仓库类型（a=欧拉, b=龙蜥, 其他=CQ内部仓库）
+-.TP
+-2. 输入分支名（默认：master）
+-.TP
+-3. 自动克隆代码
+-.TP
+-4. 配置/root/rpmbuild目录结构（y/n）
+-.TP
+-5. 生成SOURCEINFO.yaml（欧拉/龙蜥仓库）
+-.SS "参数说明"
+-.TP
+-\fB包名\fR
+-必需，软件包名称（如：httpd）
+-.TP
+-\fB\-h\fR, \fB\-\-help\fR
+-显示此帮助信息
+-.SH 作者
+-Xuebing Li
+-.SH "报告错误"
+-发送邮箱至 \fIlixuebing@cqsoftware.com.cn\fR
+-.SH 版权
+-版权 \(co 2025 CQ Software.
+-.br
+-本软件按MIT许可证发布
+-.SH "参见"
+-.B upload(1), compile(1)
+-.br
+-官方文档: https://github.com/lxb162649/cqpkg
+diff -Nuar cqpkg_manager-1.0.1/man/zh_CN/man1/compile.1 cqpkg_manager-1.0.1-diff/man/zh_CN/man1/compile.1
+--- cqpkg_manager-1.0.1/man/zh_CN/man1/compile.1	2025-06-17 14:32:16.000000000 +0800
++++ cqpkg_manager-1.0.1-diff/man/zh_CN/man1/compile.1	1970-01-01 08:00:00.000000000 +0800
+@@ -1,47 +0,0 @@
+-.\" 请勿修改此文件！它是为cqpkg_manager生成的
+-.TH COMPILE "1" "2025-06-16" "cqpkg_manager" "用户命令"
+-.SH 名称
+-compile \- RPM包编译工具，自动安装依赖并构建RPM包
+-.SH 简介
+-.B compile
+-[\fI\,选项\/\fR]... [\fI\,路径名\/\fR]
+-.SH 说明
+-.\" 在此处添加任何其他描述
+-.PP
+-自动安装编译依赖、构建RPM包并展示结果，支持两种模式：全局模式（基于/root/rpmbuild）和本地模式（指定源码包目录）。
+-.SS "选项说明"
+-.TP
+-\fB\-ba\fR
+-构建二进制和源码RPM包
+-.TP
+-\fB\-bp\fR
+-只执行到编译前阶段
+-.TP
+-\fB\-bs\fR
+-只构建源码RPM包
+-.TP
+-\fB\-h\fR, \fB\-\-help\fR
+-显示此帮助信息
+-.SS "模式说明"
+-.TP
+-全局模式
+-基于默认的 /root/rpmbuild 目录（即：compile）
+-.TP
+-本地模式
+-基于指定的源码包目录（如：compile felix-scr）
+-.SS "参数说明"
+-.TP
+-\fB路径名\fR
+-可选，源码包目录名（默认使用 /root/rpmbuild）
+-.SH 作者
+-Xuebing Li
+-.SH "报告错误"
+-发送邮箱至 \fIlixuebing@cqsoftware.com.cn\fR
+-.SH 版权
+-版权 \(co 2025 CQ Software.
+-.br
+-本软件按MIT许可证发布
+-.SH "参见"
+-.B clone(1), upload(1)
+-.br
+-官方文档: https://github.com/lxb162649/cqpkg
+diff -Nuar cqpkg_manager-1.0.1/man/zh_CN/man1/upload.1 cqpkg_manager-1.0.1-diff/man/zh_CN/man1/upload.1
+--- cqpkg_manager-1.0.1/man/zh_CN/man1/upload.1	2025-06-17 14:32:16.000000000 +0800
++++ cqpkg_manager-1.0.1-diff/man/zh_CN/man1/upload.1	1970-01-01 08:00:00.000000000 +0800
+@@ -1,52 +0,0 @@
+-.\" 请勿修改此文件！它是为cqpkg_manager生成的
+-.TH UPLOAD "1" "2025-06-16" "cqpkg_manager" "用户命令"
+-.SH 名称
+-upload \- 将本地代码上传至GitLab仓库指定分支
+-.SH 简介
+-.B upload
+-\fI\,路径名 分支名 "提交信息"\/\fR
+-.SH 说明
+-.\" 在此处添加任何其他描述
+-.PP
+-将本地代码上传至GitLab仓库指定分支，支持提交信息规范，自动选择代码来源（~/rpmbuild或当前目录）并创建备份。
+-.SS "提交信息规范"
+-.TP
+-文档更新
+-"文档(README): 更新安装步骤"
+-.TP
+-SPEC修复
+-"修复(spec): 移除无效宏定义"
+-.TP
+-上游同步
+-"更新(同步欧拉仓库): 同步版本2.12.1"
+-.TP
+-架构适配
+-"适配(x86_64): 修复编译警告"
+-.TP
+-\fB路径名\fR
+-必需，目标仓库名称（如：nginx）
+-.TP
+-\fB分支名\fR
+-必需，目标分支（如：main）
+-.TP
+-\fB"提交信息"\fR
+-必需，遵循规范的提交信息
+-.SS "操作流程"
+-.TP
+-1. 选择代码来源（~/rpmbuild 或当前目录）
+-.TP
+-2. 自动清理/复制文件
+-.TP
+-3. 提交到指定分支并创建备份
+-.SH 作者
+-Xuebing Li
+-.SH "报告错误"
+-发送邮箱至 \fIlixuebing@cqsoftware.com.cn\fR
+-.SH 版权
+-版权 \(co 2025 CQ Software.
+-.br
+-本软件按MIT许可证发布
+-.SH "参见"
+-.B clone(1), compile(1)
+-.br
+-官方文档: https://github.com/lxb162649/cqpkg
+diff -Nuar cqpkg_manager-1.0.1/upload cqpkg_manager-1.0.1-diff/upload
+--- cqpkg_manager-1.0.1/upload	2025-06-17 14:32:16.000000000 +0800
++++ cqpkg_manager-1.0.1-diff/upload	1970-01-01 08:00:00.000000000 +0800
+@@ -1,196 +0,0 @@
+-#!/bin/bash
+-
+-# 颜色定义
+-RED='\033[0;31m'
+-GREEN='\033[0;32m'
+-YELLOW='\033[0;33m'
+-BLUE='\033[0;34m'
+-NC='\033[0m' # 恢复默认颜色
+-
+-# 日志函数
+-log_info() {
+-    echo -e "${GREEN}[INFO]${NC} $1"
+-}
+-
+-log_warn() {
+-    echo -e "${YELLOW}[WARN]${NC} $1"
+-}
+-
+-log_error() {
+-    echo -e "${RED}[ERROR]${NC} $1" >&2
+-}
+-
+-# 帮助信息
+-show_help() {
+-    echo -e "${BLUE}代码上传工具${NC}"
+-    echo
+-    echo -e "${YELLOW}功能说明：${NC}"
+-    echo -e "  ${GREEN}•${NC} 将本地代码上传至GitLab仓库指定分支"
+-    echo -e "  ${GREEN}•${NC} 支持提交信息规范和RPM包备份"
+-    echo
+-    echo -e "${YELLOW}使用语法：${NC}"
+-    echo "  upload <路径名> <分支名> \"<提交信息>\""
+-    echo
+-    echo -e "${YELLOW}参数说明：${NC}"
+-    echo -e "  ${GREEN}<路径名>${NC}      必需，目标仓库本地路径（如：~/projects/felix-scr）"
+-    echo -e "  ${GREEN}<分支名>${NC}      必需，目标分支（如：dev/test 或 main）"
+-    echo -e "  ${GREEN}<提交信息>${NC}    必需，遵循规范（如：\"修复(spec): 优化SPEC文件\"）"
+-    echo
+-    echo -e "${YELLOW}提交信息规范示例：${NC}"
+-    echo -e "  ${GREEN}-${NC} 文档更新：\"文档(README): 更新安装步骤\""
+-    echo -e "  ${GREEN}-${NC} SPEC修复：\"修复(spec): 移除无效宏定义\""
+-    echo -e "  ${GREEN}-${NC} 上游同步：\"更新(同步欧拉仓库): 同步版本2.12.1\""
+-    echo -e "  ${GREEN}-${NC} 上游同步：\"更新(同步龙蜥仓库): 同步版本2.12.1\""
+-    echo -e "  ${GREEN}-${NC} 架构适配：\"适配(x86_64): 修复编译警告\""
+-    echo
+-    echo -e "${YELLOW}操作流程：${NC}"
+-    echo -e "  ${GREEN}1.${NC} 选择代码来源（~/rpmbuild 或当前目录）"
+-    echo -e "  ${GREEN}2.${NC} 自动清理/复制文件"
+-    echo -e "  ${GREEN}3.${NC} 提交到指定分支并创建备份"
+-    echo
+-    echo -e "${YELLOW}示例：${NC}"
+-    echo "  upload nginx main \"更新(龙蜥): 同步2.18.0版本\""
+-}
+-
+-# 错误处理函数
+-exit_with_error() {
+-    log_error "$1"
+-    exit 1
+-}
+-
+-# 验证参数
+-validate_arguments() {
+-    if [[ $1 == "-h" || $1 == "--help" ]]; then
+-        show_help
+-        exit 0
+-    fi
+-    
+-    if ! PKG_PATH="$(realpath -e "$1" 2>/dev/null)"; then
+-        log_error "错误：请提供有效的路径参数" >&2
+-    fi
+-    BRANCH=$2
+-    COMMIT_MSG=$3
+-    
+-    if [ -z "$PKG_PATH" ] || [ -z "$BRANCH" ] || [ -z "$COMMIT_MSG" ]; then
+-        exit_with_error "缺少必填参数（路径名、分支、提交信息）"
+-    fi
+-    
+-    log_info "参数验证通过"
+-}
+-
+-# 代码复制逻辑
+-copy_code_from_rpmbuild() {
+-    log_info "正在从 ~/rpmbuild 复制代码..."
+-    LOCAL_RPMBUILD="$HOME/rpmbuild"
+-    
+-    # 检查rpmbuild目录是否存在
+-    if [ ! -d "$LOCAL_RPMBUILD" ]; then
+-        exit_with_error "~/rpmbuild 目录不存在"
+-    fi
+-    
+-    # 清理目标目录中的RPM相关文件（使用绝对路径避免误删）
+-    rm -rf "$PKG_PATH/BUILD" "$PKG_PATH/SOURCES" "$PKG_PATH/SPECS" "$PKG_PATH/SOURCEINFO.yaml"
+-    
+-    # 复制文件（保留目录结构）
+-    if ! cp -rf "$LOCAL_RPMBUILD"/. "$PKG_PATH/"; then
+-        exit_with_error "复制文件失败"
+-    fi
+-    
+-    log_info "代码复制完成"
+-}
+-
+-# 管理Git分支
+-manage_git_branch() {
+-    log_info "进入仓库目录: $PKG_PATH"
+-    cd "$PKG_PATH" || exit_with_error "目录不存在: $PKG_PATH"
+-    
+-    log_info "切换到分支: $BRANCH"
+-    git branch -M "$BRANCH"  # 强制切换/创建分支
+-    git checkout "$BRANCH"    # 确保在目标分支
+-    
+-    log_info "分支管理完成"
+-}
+-
+-# 提交并推送代码
+-commit_and_push_code() {
+-    log_info "准备提交代码..."
+-    git add -A
+-    
+-    log_info "提交代码 with message: $COMMIT_MSG"
+-    if ! git commit -m "$COMMIT_MSG"; then
+-        log_warn "提交失败，可能没有代码变更"
+-        exit 0  # 无变更时正常退出
+-    fi
+-    
+-    log_info "正在推送至 origin/$BRANCH..."
+-    if ! git push -uf origin "$BRANCH"; then
+-        exit_with_error "代码推送失败，请检查网络和权限"
+-    fi
+-    
+-    log_info "代码推送完成"
+-}
+-
+-# 备份RPM包
+-backup_rpm_packages() {
+-    local backup_dir="../success/RPMS"
+-    log_info "准备备份RPM包到 $backup_dir"
+-    
+-    mkdir -p "$backup_dir"/{noarch,x86_64}
+-    
+-    # 备份noarch架构包
+-    if ls -1 "$PKG_PATH/RPMS/noarch"/*.rpm &> /dev/null; then
+-        log_info "备份noarch架构RPM包..."
+-        cp -v "$PKG_PATH/RPMS/noarch"/*.rpm "$backup_dir/noarch/"
+-    else
+-        log_warn "未找到noarch架构RPM包"
+-    fi
+-    
+-    # 备份x86_64架构包
+-    if ls -1 "$PKG_PATH/RPMS/x86_64"/*.rpm &> /dev/null; then
+-        log_info "备份x86_64架构RPM包..."
+-        cp -v "$PKG_PATH/RPMS/x86_64"/*.rpm "$backup_dir/x86_64/"
+-    else
+-        log_warn "未找到x86_64架构RPM包"
+-    fi
+-    
+-    log_info "RPM包备份完成"
+-}
+-
+-# 主函数
+-main() {
+-    # 1. 验证参数
+-    validate_arguments "$@"
+-    
+-    log_info "开始执行代码上传流程"
+-    
+-    # 2. 交互式确认代码来源
+-    read -p "是否从 ~/rpmbuild 目录上传代码？(y/yes/其他跳过): " choice
+-    choice=$(echo "$choice" | tr '[:upper:]' '[:lower:]')
+-    
+-    if [[ "$choice" =~ ^(y|yes)$ ]]; then
+-        copy_code_from_rpmbuild
+-    else
+-        log_info "使用当前目录代码: $PKG_PATH"
+-    fi
+-    
+-    # 3. 管理Git分支
+-    manage_git_branch
+-    
+-    # 4. 提交并推送代码
+-    commit_and_push_code
+-    
+-    # 5. 备份RPM包（仅当存在RPM文件时）
+-    if [ "$(ls -A "$PKG_PATH/RPMS" 2>/dev/null)" ]; then
+-        
+-        log_info "开始备份RPM包"
+-        backup_rpm_packages
+-    else
+-        log_warn "警告：未找到RPM文件，跳过备份"
+-    fi
+-    
+-    log_info "${GREEN}所有操作已完成！${NC}"
+-    log_info "代码已推送至 $BRANCH 分支"
+-}
+-
+-# 执行主函数
+-main "$@"
+diff -Nuar cqpkg_manager-1.0.1/usr/bin/clone cqpkg_manager-1.0.1-diff/usr/bin/clone
+--- cqpkg_manager-1.0.1/usr/bin/clone	1970-01-01 08:00:00.000000000 +0800
++++ cqpkg_manager-1.0.1-diff/usr/bin/clone	2025-06-17 17:05:46.338136534 +0800
+@@ -0,0 +1,358 @@
++#!/bin/bash
++
++# 颜色定义
++RED='\033[0;31m'
++GREEN='\033[0;32m'
++YELLOW='\033[0;33m'
++BLUE='\033[0;34m'
++NC='\033[0m' # No Color
++
++# 日志函数
++log_info() {
++    echo -e "${GREEN}[INFO]${NC} $1"
++}
++
++log_warn() {
++    echo -e "${YELLOW}[WARN]${NC} $1"
++}
++
++log_error() {
++    echo -e "${RED}[ERROR]${NC} $1" >&2
++}
++
++# 帮助信息
++show_help() {
++    echo -e "${BLUE}功能说明：${NC}"
++    echo -e "  ${GREEN}•${NC} 从指定仓库克隆软件包源码并配置RPM构建环境"
++    echo -e "  ${GREEN}•${NC} 支持欧拉（OpenEuler）、龙蜥（Anolis OS）和CQ内部仓库"
++    echo -e "  ${GREEN}•${NC} 自动生成SOURCEINFO.yaml元数据文件"
++    echo
++    echo -e "${BLUE}使用语法：${NC}"
++    echo -e "  clone ${YELLOW}<包名>${NC} [分支名]"
++    echo
++    echo -e "${BLUE}参数说明：${NC}"
++    echo -e "  ${YELLOW}<包名>${NC}        必需，软件包名称（如：httpd）"
++    echo
++    echo -e "${BLUE}选项：${NC}"
++    echo -e "  ${YELLOW}-h, --help${NC}    显示此帮助信息"
++    echo
++    echo -e "${BLUE}操作流程：${NC}"
++    echo -e "  ${GREEN}1.${NC} 输入仓库类型（a=欧拉, b=龙蜥, 其他=CQ内部仓库）"
++    echo -e "  ${GREEN}2.${NC} 输入分支名（默认：master）"
++    echo -e "  ${GREEN}3.${NC} 自动克隆代码"
++    echo -e "  ${GREEN}4.${NC} 配置$HOME/rpmbuild目录结构(y/n)"
++    echo -e "  ${GREEN}5.${NC} 生成包含开源协议、上游信息的SOURCEINFO.yaml(欧拉或龙蜥仓库)"
++    echo
++    echo -e "${BLUE}示例：${NC}"
++    echo -e "  ${GREEN}1.${NC} 克隆httpd"
++    echo -e "     clone httpd"
++    echo
++}
++
++# 清理旧目录
++clean_env() {
++    log_info "正在清理旧环境..."
++    if [[ -d "$PKG_PATH" ]]; then
++        rm -rf "$PKG_PATH" || { log_error "清理目录 $PKG_PATH 失败"; return 1; }
++    fi
++    
++    if [[ "$CREATE_RPMBUILD_DIR" == "y" && -d "$HOME/rpmbuild" ]]; then
++        rm -rf "$HOME/rpmbuild" || { log_error "清理目录 $HOME/rpmbuild 失败"; return 1; }
++    fi
++    
++    return 0
++}
++
++# 克隆仓库函数
++clone_repo() {
++    local upstream_url=$1
++    log_info "正在克隆仓库: $upstream_url (分支: $CLONE_BRANCH)"
++    
++    if ! git clone -b "$CLONE_BRANCH" "$upstream_url" "$PKG_PATH"; then
++        log_error "克隆失败，清理残留文件..."
++        if [[ -d "$PKG_PATH" ]]; then
++            rm -rf "$PKG_PATH"
++        fi
++        return 1
++    fi
++    
++    log_info "克隆成功"
++    return 0
++}
++
++# 移动文件到rpmbuild目录
++mv_files() {
++    log_info "正在创建工作路径目录结构 $WORK_PATH ..."
++    
++    mkdir -p "$WORK_PATH"/{SPECS,SOURCES} || { log_error "创建工作路径目录结构失败"; return 1; }
++
++    log_info "正在整理文件到 $WORK_PATH ..."
++    
++    # 移动SPEC文件
++    if [[ -n $(find "$PKG_PATH" -maxdepth 1 -name "*.spec" -print -quit) ]]; then
++        mv "$PKG_PATH"/*.spec "$WORK_PATH/SPECS/" || { log_error "移动SPEC文件失败"; return 1; }
++        log_info "移动SPEC文件成功"
++    else
++        log_warn "未找到SPEC文件"
++    fi
++    
++    # 移动资源文件
++    if [[ -n $(find "$PKG_PATH" -maxdepth 1 -type f ! -name ".*" -print -quit) ]]; then
++        find "$PKG_PATH" -maxdepth 1 -type f ! -name ".*" -exec mv {} "$WORK_PATH/SOURCES/" \; || { log_error "移动资源文件失败"; return 1; }
++        log_info "移动资源文件成功"
++    else
++        log_warn "未找到可移动的资源文件"
++    fi
++    
++    # 处理.gitignore
++    if [[ "$CREATE_RPMBUILD_DIR" == "y" ]]; then
++        if [[ -f "$PKG_PATH/.gitignore" ]]; then
++            mv "$PKG_PATH/.gitignore" "$WORK_PATH" || { log_error "移动.gitignore文件失败"; return 1; }
++            log_info "移动.gitignore文件成功"
++        fi
++        rm -rf "$PKG_PATH"
++        log_info "删除原克隆目录"
++    else
++        if [[ -d "$WORK_PATH/.git" ]]; then
++            rm -rf "$WORK_PATH/.git"
++            log_info "删除.git目录"
++        fi
++    fi
++
++    log_info "整理文件完成"
++    return 0
++}
++
++# 创建.gitignore文件
++create_gitignore() {
++    log_info "正在创建.gitignore文件..."
++    
++    cat > "$PKG_PATH/.gitignore" << EOF
++#rpm
++RPMS
++SRPMS
++BUILDROOT
++#vscode
++.vscode 
++EOF
++    
++    if [[ $? -eq 0 ]]; then
++        log_info ".gitignore文件创建成功"
++        return 0
++    else
++        log_error ".gitignore文件创建失败"
++        return 1
++    fi
++}
++
++# 生成元数据文件
++generate_metadata() {
++    cd "$WORK_PATH" || { log_error "无法进入目录 $WORK_PATH"; return 1; }
++    
++    local spec_file=$(ls SPECS/*.spec 2>/dev/null)
++    
++    if [[ -z "$spec_file" ]]; then
++        log_error "未找到SPEC文件"
++        return 1
++    fi
++    
++    local url=$(awk '/^(URL|Url):/ {print $2}' "$spec_file")
++    local license=$(grep -oP 'License:\s*\K.*' "$spec_file" | tr '\n' ' ')
++    
++    # 确定上游仓库URL
++    local upstream_url
++    if [[ "$REPO_TYPE" == "a" ]]; then
++        upstream_url="https://gitee.com/src-openeuler/${PKG_NAME}.git"
++    else
++        upstream_url="https://gitee.com/src-anolis-os/${PKG_NAME}.git"
++    fi
++    
++    # 写入YAML
++    cat <<EOF > SOURCEINFO.yaml
++license:
++  - ${license}
++upstream:
++  src: ${upstream_url}
++  branch: ${CLONE_BRANCH}
++origin:
++  src: ${url:-"未指定上游地址"}
++EOF
++
++    log_info "元数据文件生成完成 $(pwd)/SOURCEINFO.yaml"
++    return 0
++}
++
++# 验证输入
++validate_input() {
++    if [[ -z "$PKG_NAME" ]]; then
++        log_error "缺少包名参数"
++        show_help
++        return 1
++    fi
++    
++    # 验证包名是否符合命名规范（简化版）
++    if [[ ! "$PKG_NAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
++        log_error "包名包含非法字符，只能使用字母、数字、连字符和下划线"
++        return 1
++    fi
++    
++    return 0
++}
++
++# 克隆CQ内部仓库
++clone_cq_repo() {
++    # CQ内部仓库列表（按优先级排序）
++    local cq_upstream_urls=(
++        "http://192.168.10.152/cyos-security/public/$PKG_NAME.git"
++        "http://192.168.10.152/cyos-security/protected/$PKG_NAME.git"
++        "http://192.168.10.152/cyos-security/private/$PKG_NAME.git"
++        "http://192.168.10.152/cyos-security/trash/$PKG_NAME.git"
++        "http://192.168.10.152/cyos-security/iso/$PKG_NAME.git"
++        "http://192.168.10.152/cyos-security/$PKG_NAME.git"
++        "http://192.168.10.152/cyos-security/toolkits/$PKG_NAME.git"
++        "http://192.168.10.152/cyos-security/transition/python3.11/$PKG_NAME.git"
++        "http://192.168.10.152/cyos-security/transition/deb_to_rpm/$PKG_NAME.git"
++        "http://192.168.10.152/cyos-security/transition/xfce/$PKG_NAME.git"
++        "http://192.168.10.152/cyos-security/transition/$PKG_NAME.git"
++        "http://192.168.10.152/lixuebing/$PKG_NAME.git"
++    )
++    
++    log_info "尝试从CQ内部仓库克隆..."
++    
++    local cloned=false
++    for upstream_url in "${cq_upstream_urls[@]}"; do
++        log_info "检查仓库: $upstream_url"
++        if git ls-remote "$upstream_url" &>/dev/null; then
++            log_info "找到仓库，开始克隆..."
++            if clone_repo "$upstream_url"; then
++                cloned=true
++                break
++            fi
++        fi
++    done
++    
++    if [[ "$cloned" == false ]]; then
++        log_error "未在任何CQ内部仓库中找到 $PKG_NAME"
++        return 1
++    fi
++    
++    return 0
++}
++
++main() {
++    # 初始化变量
++    PKG_NAME=""
++    DEFAULT_BRANCH="master"
++    CLONE_BRANCH="$DEFAULT_BRANCH"
++    REPO_TYPE=""
++    CREATE_RPMBUILD_DIR=""
++    PKG_PATH=""
++    WORK_PATH=""
++    
++    # 解析命令行参数（支持选项在任意位置）
++    while [[ $# -gt 0 ]]; do
++        case "$1" in
++            -h|--help)
++                show_help
++                exit 0
++                ;;
++            *)
++                # 如果参数不是选项，则认为是PKG_NAME
++                if [[ -z "$PKG_NAME" ]]; then
++                    PKG_NAME=$1
++                else
++                    # 如果已经有PKG_NAME，则认为是分支名
++                    CLONE_BRANCH=$1
++                fi
++                ;;
++        esac
++        shift
++    done
++    
++    # 验证输入
++    if ! validate_input; then
++        exit 1
++    fi
++    
++    # 获取仓库类型
++    read -p "请选择仓库类型（a=欧拉, b=龙蜥, 其他=CQ内部仓库）: " REPO_TYPE
++    
++    # 获取分支名
++    read -p "请输入克隆分支（默认 $DEFAULT_BRANCH）: " input_branch
++    if [[ -n "$input_branch" ]]; then
++        CLONE_BRANCH="$input_branch"
++    fi
++    
++    PKG_PATH="$(pwd)/$PKG_NAME"
++    
++    # 是否创建rpmbuild目录
++    read -p "是否将代码放入$HOME/rpmbuild目录（输入y放入此目录，默认放到 $PKG_PATH 目录）: " CREATE_RPMBUILD_DIR
++    
++    # 设置工作路径
++    if [[ "$CREATE_RPMBUILD_DIR" == "y" ]]; then
++        WORK_PATH="$HOME/rpmbuild"  # 放入$HOME/rpmbuild目录
++    else
++        WORK_PATH="$PKG_PATH"  # 保持原目录结构
++    fi
++
++    # 清理环境
++    if ! clean_env; then
++        exit 1
++    fi
++    
++    # 根据仓库类型克隆
++    case "$REPO_TYPE" in
++        a)
++            local upstream_url="https://gitee.com/src-openeuler/${PKG_NAME}.git"
++            if ! clone_repo "$upstream_url"; then
++                log_error "欧拉仓库克隆失败"
++                exit 1
++            fi
++            log_info "欧拉仓库克隆成功"
++            ;;
++        b)
++            local upstream_url="https://gitee.com/src-anolis-os/${PKG_NAME}.git"
++            if ! clone_repo "$upstream_url"; then
++                log_error "龙蜥仓库克隆失败"
++                exit 1
++            fi
++            log_info "龙蜥仓库克隆成功"
++            ;;
++        *)
++            if ! clone_cq_repo; then
++                exit 1
++            fi
++            log_info "CQ内部仓库克隆成功!"
++            
++            if [[ "$CREATE_RPMBUILD_DIR" == "y" ]]; then
++                log_info "正在将 $PKG_NAME 移动到工作目录 $WORK_PATH ..."
++                mv "$PKG_PATH" "$WORK_PATH"
++                log_info "成功将 $PKG_NAME 移动到工作目录 $WORK_PATH!"
++            fi
++            exit 0
++            ;;
++    esac
++    
++    # 检查是否需要创建.gitignore
++    if [[ ! -f "$PKG_PATH/.gitignore" ]] && [[ -n $(find "$PKG_PATH" -name '*.spec' &>/dev/null) ]]; then
++        if ! create_gitignore; then
++            exit 1
++        fi
++    fi
++    
++
++    # 移动文件
++    if ! mv_files; then
++        exit 1
++    fi
++    
++    # 生成元数据
++    if ! generate_metadata; then
++        log_error "元数据生成失败"
++        exit 1
++    fi
++    
++    log_info "操作完成！RPM构建环境已配置到 $WORK_PATH"
++}
++
++main "$@"    
+diff -Nuar cqpkg_manager-1.0.1/usr/bin/compile cqpkg_manager-1.0.1-diff/usr/bin/compile
+--- cqpkg_manager-1.0.1/usr/bin/compile	1970-01-01 08:00:00.000000000 +0800
++++ cqpkg_manager-1.0.1-diff/usr/bin/compile	2025-06-17 17:05:46.338136534 +0800
+@@ -0,0 +1,261 @@
++#!/bin/bash
++#===============================================================================
++# 脚本名称：compile
++# 功能描述：自动安装编译依赖、构建RPM包并展示结果
++# 支持模式：全局模式($HOME/rpmbuild)和本地模式(指定目录)
++#===============================================================================
++
++# 启用错误处理
++set -euo pipefail
++
++#------------------------------ 配置选项 ------------------------------#
++# 颜色定义
++RED='\033[0;31m'
++GREEN='\033[0;32m'
++YELLOW='\033[0;33m'
++BLUE='\033[0;34m'
++NC='\033[0m' # 恢复默认颜色
++
++#------------------------------ 日志函数 ------------------------------#
++log_info() {
++    echo -e "${GREEN}[INFO]${NC} $1"
++}
++
++log_warn() {
++    echo -e "${YELLOW}[WARN]${NC} $1"
++}
++
++log_error() {
++    echo -e "${RED}[ERROR]${NC} $1" >&2
++    exit 1
++}
++
++#------------------------------ 帮助信息 ------------------------------#
++show_help() {
++    echo -e "${BLUE}RPM包编译工具${NC}"
++    echo
++    echo -e "${YELLOW}功能说明：${NC}"
++    echo -e "  ${GREEN}•${NC} 自动安装编译依赖、构建RPM包并展示结果"
++    echo -e "  ${GREEN}•${NC} 支持两种模式："
++    echo "    1. 全局模式：基于默认的 $HOME/rpmbuild 目录"
++    echo "    2. 本地模式：基于指定的源码包目录"
++    echo
++    echo -e "${YELLOW}使用语法：${NC}"
++    echo "  $(basename "$0") [选项] [路径名]"
++    echo
++    echo -e "${YELLOW}选项：${NC}"
++    echo -e "  ${GREEN}-ba${NC}        构建二进制和源码RPM包"
++    echo -e "  ${GREEN}-bp${NC}        只执行到编译前阶段"
++    echo -e "  ${GREEN}-bs${NC}        只构建源码RPM包"
++    echo -e "  ${GREEN}-h, --help${NC}   显示此帮助信息"
++    echo
++    echo -e "${YELLOW}参数：${NC}"
++    echo "  [路径名]     可选，源码包目录名 (默认使用 $HOME/rpmbuild)"
++    echo
++    echo -e "${YELLOW}示例(默认参数为 -ba -bp):${NC}"
++    echo "  1. 全局模式 (编译 $HOME/rpmbuild 中的SPEC文件):"
++    echo "     $(basename "$0")"
++    echo
++    echo "  2. 本地模式 (编译指定目录中的包):"
++    echo "     $(basename "$0") felix-scr"
++    echo
++    echo "  3. 只构建源码RPM包:"
++    echo "     $(basename "$0") -bs /path/to/package"
++    echo
++    echo "  4. 同时执行多种构建类型:"
++    echo "     $(basename "$0") -ba -bs /path/to/package"
++    exit 0
++}
++
++#------------------------------ 核心功能 ------------------------------#
++# 安装编译依赖
++install_dependencies() {
++    log_info "正在安装编译依赖..."
++    
++    if ! yum builddep -y "$SPEC_FILE" &> /dev/null; then
++        log_error "安装依赖失败，请检查SPEC文件和网络连接"
++    fi
++    log_info "依赖安装完成"
++}
++
++# 构建RPM包
++build_rpm_package() {
++    local build_type=$1
++    local build_args=()
++    
++    # 设置自定义TOPDIR (如果不是全局模式)
++    if [[ "$PKG_PATH" != "$HOME/rpmbuild" ]]; then
++        build_args+=(-D "_topdir $PKG_PATH")
++        log_info "使用自定义TOPDIR: $PKG_PATH"
++    fi
++    
++    log_info "开始构建RPM包 (类型: $build_type)"
++    log_info "SPEC文件: $(basename "$SPEC_FILE")"
++    
++    case "$build_type" in
++        "ba")
++            log_info "构建二进制和源码RPM包..."
++            rpmbuild -ba "${build_args[@]}" "$SPEC_FILE"
++            ;;
++        "bp")
++            log_info "执行到编译前阶段..."
++            rpmbuild -bp "${build_args[@]}" "$SPEC_FILE"
++            ;;
++        "bs")
++            log_info "构建源码RPM包..."
++            rpmbuild -bs "${build_args[@]}" "$SPEC_FILE"
++            ;;
++        *)
++            log_error "未知的构建类型: $build_type"
++            ;;
++    esac
++    
++    log_info "构建完成 (类型: $build_type)"
++}
++
++# 展示构建结果
++show_build_results() {
++    local rpms_dir="${PKG_PATH}/RPMS"
++    local srpms_dir="${PKG_PATH}/SRPMS"
++    
++    log_info "构建结果:"
++    
++    # 检查RPM目录
++    if [[ ! -d "$rpms_dir" ]]; then
++        log_warn "未生成RPM文件目录"
++        return 1
++    fi
++    
++    # 显示各架构的RPM包
++    for arch in noarch x86_64; do
++        local arch_dir="$rpms_dir/$arch"
++        echo -e "${BLUE}== $arch ==${NC}"
++        
++        if [[ -d "$arch_dir" && "$(ls -A "$arch_dir" 2>/dev/null)" ]]; then
++            local count=$(ls -1 "$arch_dir" | wc -l)
++            echo -e "找到 ${YELLOW}$count${NC} 个RPM包:"
++            ls -1 "$arch_dir" | while read -r file; do
++                echo "$arch_dir/$file"
++            done
++        else
++            echo "  无"
++        fi
++        echo
++    done
++    
++    # 显示源码RPM包
++    echo -e "${BLUE}== 源码包 ==${NC}"
++    if [[ -d "$srpms_dir" && "$(ls -A "$srpms_dir" 2>/dev/null)" ]]; then
++        local count=$(ls -1 "$srpms_dir" | wc -l)
++        echo -e "找到 ${YELLOW}$count${NC} 个源码RPM包:"
++        ls -1 "$srpms_dir" | while read -r file; do
++            echo "$srpms_dir/$file"
++        done
++    else
++        echo "  无"
++    fi
++
++    return 0
++}
++
++#------------------------------ 主函数 ------------------------------#
++main() {
++    # 初始化变量
++    local -a BUILD_TYPES=("ba" "bp")  # 默认构建类型
++    local PKG_PATH=""
++    local SPEC_FILE=""
++    
++    # 解析命令行参数
++    while [[ $# -gt 0 ]]; do
++        case "$1" in
++            -h|--help)
++                show_help
++                ;;
++            -ba|-bp|-bs)
++                # 移除默认构建类型并添加新类型
++                if [[ ${#BUILD_TYPES[@]} -eq 2 ]]; then
++                    BUILD_TYPES=()
++                    log_info "移除默认构建类型，使用自定义类型"
++                fi    
++                local build_type="${1#-}"  # 移除前缀'-'
++                BUILD_TYPES+=("$build_type")
++                ;;
++            *)
++                # 设置工作目录
++                if [[ -z "$PKG_PATH" ]]; then
++                    if ! PKG_PATH="$(realpath -e "$1" 2>/dev/null)"; then
++                        log_error "错误：请提供有效的路径参数" >&2
++                    fi
++                else
++                    log_error "重复的路径参数 '$1'"
++                fi
++                ;;
++        esac
++        shift
++    done
++    
++    # 去重构建类型
++    local -a UNIQUE_TYPES=()
++    for type in "${BUILD_TYPES[@]}"; do
++        if [[ ! " ${UNIQUE_TYPES[*]} " =~ " ${type} " ]]; then
++            UNIQUE_TYPES+=("$type")
++        fi
++    done
++    BUILD_TYPES=("${UNIQUE_TYPES[@]}")
++    
++    # 验证构建类型
++    for type in "${BUILD_TYPES[@]}"; do
++        if [[ ! "$type" =~ ^(ba|bp|bs)$ ]]; then
++            log_error "不支持的构建类型: $type"
++        fi
++    done
++    
++    # 确定工作目录
++    if [[ -z "$PKG_PATH" ]]; then
++        PKG_PATH="$HOME/rpmbuild"
++        log_info "使用全局模式: $PKG_PATH"
++    else
++        log_info "使用本地模式: $PKG_PATH"
++    fi
++    
++    # 查找SPEC文件
++    local spec_files=("$PKG_PATH/SPECS"/*.spec)
++    if [[ ${#spec_files[@]} -eq 0 ]]; then
++        log_error "未找到SPEC文件: $PKG_PATH/SPECS/*.spec"
++    elif [[ ${#spec_files[@]} -gt 1 ]]; then
++        log_warn "找到多个SPEC文件，使用第一个:"
++        for file in "${spec_files[@]}"; do
++            echo "  - $(basename "$file")"
++        done
++    fi
++    
++    SPEC_FILE="${spec_files[0]}"
++    log_info "使用SPEC文件: $(basename "$SPEC_FILE")"
++    
++    # 切换到工作目录
++    cd "$PKG_PATH" || log_error "无法切换到目录: $PKG_PATH"
++    
++    # 安装依赖（只需要安装一次）
++    install_dependencies
++    
++    # 执行所有构建类型
++    log_info "将要执行的构建类型: ${BUILD_TYPES[*]}"
++    
++    for build_type in "${BUILD_TYPES[@]}"; do
++        build_rpm_package "$build_type"
++    done
++    
++    # 显示结果 (仅对包含"ba"的构建)
++    if [[ " ${BUILD_TYPES[*]} " =~ " ba " ]]; then
++        show_build_results
++    else
++        log_info "注意: 未执行 '-ba' 构建，因此不显示结果"
++    fi
++    
++    log_info "${GREEN}所有操作已完成${NC}"
++}
++
++# 执行主函数
++if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
++    main "$@"
++fi
+\ 文件尾没有换行符
+diff -Nuar cqpkg_manager-1.0.1/usr/bin/cqpatch cqpkg_manager-1.0.1-diff/usr/bin/cqpatch
+--- cqpkg_manager-1.0.1/usr/bin/cqpatch	1970-01-01 08:00:00.000000000 +0800
++++ cqpkg_manager-1.0.1-diff/usr/bin/cqpatch	2025-06-17 17:06:08.334254541 +0800
+@@ -0,0 +1,311 @@
++#!/bin/bash
++
++# 设置严格模式，遇到错误立即退出
++set -euo pipefail
++
++# 颜色定义
++RED='\033[0;31m'
++GREEN='\033[0;32m'
++YELLOW='\033[0;33m'
++BLUE='\033[0;34m'
++NC='\033[0m' # No Color
++
++# 日志函数
++log_info() {
++    echo -e "${GREEN}[INFO]${NC} $1"
++}
++
++log_warn() {
++    echo -e "${YELLOW}[WARN]${NC} $1"
++}
++
++log_error() {
++    echo -e "${RED}[ERROR]${NC} $1"
++}
++
++# 显示帮助信息
++show_help() {
++    echo -e "${BLUE}功能说明：${NC}"
++    echo -e "  ${GREEN}•${NC} 生成软件包补丁并修改SPEC文件（适用于RPM构建流程）"
++    echo -e "  ${GREEN}•${NC} 自动下载源码、解压并创建补丁对比目录"
++    echo -e "  ${GREEN}•${NC} 支持更新SPEC文件中的Patch、Release版本及Changelog"
++    echo
++    echo -e "${BLUE}使用语法：${NC}"
++    echo -e "  $0 ${YELLOW} <PKG_PATH>${NC}"
++    echo
++    echo -e "${BLUE}参数说明：${NC}"
++    echo -e "  ${YELLOW}<PKG_PATH>${NC}    必需，BUILD目录的上一级目录（例：/path/to/package）"
++    echo
++    echo -e "${BLUE}选项：${NC}"
++    echo -e "  ${YELLOW}-h, --help${NC}       显示此帮助信息"
++    echo
++    echo -e "${BLUE}操作流程：${NC}"
++    echo -e "  ${GREEN}1.${NC} 下载源码并解压至BUILD目录"
++    echo -e "  ${GREEN}2.${NC} 手动修改对比目录中的源码"
++    echo -e "  ${GREEN}3.${NC} 输入补丁文件名并生成.patch文件"
++    echo -e "  ${GREEN}4.${NC} 自动更新SPEC文件中的Patch配置"
++    echo -e "  ${GREEN}5.${NC} 递增Release版本并添加Changelog记录"
++    echo
++    echo -e "${BLUE}示例：${NC}"
++    echo -e "  ${GREEN}1.${NC} 对当前目录下的httpd包生成补丁"
++    echo -e "     $0 httpd"
++    echo -e "  ${GREEN}2.${NC} 对指定路径的nginx包执行补丁流程"
++    echo -e "     $0 /root/rpmbuild/SPECS/nginx"
++    echo
++    echo -e "${RED}!!!注意：${NC} 若仅提供包名（如httpd），需确保包目录在当前工作路径下"
++}
++
++# 函数：生成补丁并修改SPEC文件
++generate_patch_and_modify_spec() {
++    log_info "正在生成补丁..."
++
++    # 获取源码路径
++    local src_path=$(grep '^Source0:' "$NEW_SPEC_FILE" | sed 's/^Source0:\s*//')
++    
++    # 获取压缩源码文件名称
++    local src_name_gz=$(basename "$src_path")
++    if [ ! -f "$SOURCES_DIR/$src_name_gz" ]; then
++        log_info "正在下载源码: $src_name_gz ..."
++        if ! wget "$src_path" -P "$SOURCES_DIR" >/dev/null 2>&1; then
++            log_error "下载源码失败: $src_path"
++            exit 1
++        fi
++    else
++        log_info "源码已存在: $SOURCES_DIR/$src_name_gz"
++    fi
++    
++    # 解压源码
++    log_info "正在解压源码..."
++    if ! rpmbuild -bp -D "_topdir $PKG_PATH" "$SPEC_FILE" >/dev/null 2>&1; then
++        log_error "解压源码失败"
++        exit 1
++    fi
++
++    # 获取源码名（从BUILD目录内容推断）
++    src_name=$(ls "$BUILD_DIR" 2>/dev/null | head -n 1)
++    if [ -z "$src_name" ]; then
++        log_error "未找到BUILD目录下的源文件"
++        exit 1
++    fi
++    
++    # 获取包名（从源码名中获取，去掉版本号）
++    local pkg_name=$(echo "$src_name" | cut -d '-' -f 1)
++    src_path=$(ls -d "$BUILD_DIR/$src_name")
++    log_info "处理源码目录: $src_path"
++
++    # 创建打补丁所需目录
++    local src_diff_path="$src_path-diff"
++    cp -rf "$src_path" "$src_diff_path"
++
++    log_info "------------------------------"
++    log_info "请手动修改目录: $src_diff_path"
++    log_info "修改完成后输入补丁文件名继续..."
++    
++    local patch_name
++    read -p "请输入补丁文件名（例：cqos-func-add-chinese-man-page.patch）: " patch_name
++    if [ -z "$patch_name" ]; then
++        log_error "补丁文件名不能为空"
++        exit 1
++    fi
++    
++    log_info "继续执行脚本..."
++
++    # 生成补丁
++    cd "$BUILD_DIR"
++    diff -Nuar "${src_name}" "${src_name}-diff" > "${SOURCES_DIR}/${patch_name}" || true
++    log_info "已生成补丁: ${SOURCES_DIR}/${patch_name}"
++
++    # 清理工作目录
++    rm -rf "$src_diff_path"
++
++    ############################## 修改 SPEC 文件 ##############################
++    cd "$SPECS_DIR"
++    log_info "正在修改 SPEC 文件: $SPEC_FILE ..."
++    log_info "spec 文件修改如下："
++
++    # 获取spec文件中的最后一个patch行，并获取需要添加patch的数字部分
++    last_patch=$(grep '^Patch[0-9]\+:' "$SPEC_FILE" | tail -n 1 | sed 's/:.*//' || true)
++    if [ -z "$last_patch" ]; then
++        new_patch_num=0
++    else
++        patch_num=$(echo "$last_patch" | grep -o '[0-9]\+')
++        new_patch_num=$((patch_num + 1))
++    fi
++
++    # 添加新的patch行
++    new_patch="Patch${new_patch_num}:   ${patch_name}"
++    if [ $new_patch_num -eq 0 ]; then
++        last_source=$(grep '^Source[0-9]\+:' "$SPEC_FILE" | tail -n 1 | cut -d':' -f1 || true)
++        if [ -n "$last_source" ]; then
++            sed -i "/^$last_source/a$new_patch" "$SPEC_FILE"
++            log_info "$(grep '^Source[0-9]\+:' "$SPEC_FILE" | tail -n 1)"
++            log_info "添加如下"
++            log_info "$new_patch"
++            log_info "----------"
++        else
++            log_error "未找到Source行，无法添加Patch"
++            exit 1
++        fi
++
++        # 添加 patch 应用命令
++        if grep -q '%setup' "$SPEC_FILE"; then
++            sed -i "/^%setup/a%patch${new_patch_num} -p1" "$SPEC_FILE"
++            log_info "$(grep '%setup' "$SPEC_FILE")"
++            log_info "添加如下"
++            log_info "%patch${new_patch_num} -p1"
++            log_info "----------"
++        else
++            log_info "此包自动打补丁，无需添加patch应用命令"
++        fi
++    else
++        sed -i "/^$last_patch/a$new_patch" "$SPEC_FILE"
++
++        # 添加 patch 应用命令
++        if grep -q '%setup' "$SPEC_FILE"; then
++            sed -i "/^%patch${patch_num}/a%patch${new_patch_num} -p1" "$SPEC_FILE"
++            log_info "$(grep '^Patch[0-9]\+:' "$SPEC_FILE" | tail -n 1)"
++            log_info "添加如下"
++            log_info "%patch${new_patch_num} -p1"
++            log_info "----------"
++        else
++            log_info "此包自动打补丁，无需添加patch应用命令"
++        fi
++    fi
++
++    # 提取 Epoch
++    epoch=$(grep '^Epoch:' "$SPEC_FILE" | sed 's/^Epoch:\s*//' || true)
++
++    # 提取 Version
++    version=$(grep '^Version:' "$SPEC_FILE" | sed 's/^Version:\s*//')
++    if [ -z "$version" ]; then
++        log_error "未找到Version行"
++        exit 1
++    fi
++
++    # 提取 Release
++    old_release=$(grep '^Release:' "$SPEC_FILE" | sed 's/^Release:\s*//; s/%{?dist}.*//')
++    if [ -z "$old_release" ]; then
++        log_error "未找到Release行"
++        exit 1
++    fi
++    new_release=$((old_release + 1)) 
++
++    if [ -z "$epoch" ]; then
++        version_string="$version-$new_release"
++    else
++        version_string="$epoch:$version-$new_release"
++    fi
++
++    # 更新 Release
++    sed -i "s/^\(Release:\s*\)$old_release/\1$new_release/" "$SPEC_FILE"
++    
++    # 更新changelog
++    local date=$(LANG=en_US.UTF-8 date '+%a %b %d %Y')
++    local user_name=$(git config --global user.name)
++    local user_email=$(git config --global user.email)
++    
++    if [ -z "$user_name" ]; then
++        read -p "请设置用户名: " user_name
++        if [ -z "$user_name" ]; then
++            log_error "用户名不能为空"
++            exit 1
++        fi
++        git config --global user.name "$user_name"
++    fi
++    
++    if [ -z "$user_email" ]; then
++        read -p "请设置邮箱: " user_email
++        if [ -z "$user_email" ]; then
++            log_error "邮箱不能为空"
++            exit 1
++        fi
++        git config --global user.email "$user_email"
++    fi
++    
++    local log
++    read -er -p "请输入此次更改日志（例：- Add Chinese man manual\n- Update the README.md file）: " log
++    if [ -z "$log" ]; then
++        log_warn "更改日志为空"
++    fi
++    
++    changelog="* $date $user_name <$user_email> - $version_string\n$log\n"
++    echo -e "adafasfasegsf:$changelog"
++    sed -i "/%changelog/a$changelog" "$SPEC_FILE"
++    log_info "%changelog"
++    log_info "添加如下"
++    log_info "$changelog"
++    log_info "----------"
++    log_info "SPEC 文件修改完成"
++    rm -rf "$NEW_SPEC_FILE"
++}
++
++main() {
++    # 初始化全局变量
++    ACTION=""
++    PKG_PATH=""
++    # 解析命令行参数（支持选项在任意位置）
++    while [[ $# -gt 0 ]]; do
++        case "$1" in
++            -h|--help)
++                show_help
++                exit 0
++                ;;
++            *)
++                # 如果参数不是选项，则认为是PKG_PATH
++                if [[ -z "$PKG_PATH" ]]; then
++                    if ! PKG_PATH="$(realpath -e "$1" 2>/dev/null)"; then
++                        log_error "错误：请提供有效的路径参数"
++                        show_help
++                        exit 1
++                    fi
++                else
++                    log_error "错误: 重复的路径参数 '$1'"
++                    show_help
++                    exit 1
++                fi
++                ;;
++        esac
++        shift
++    done
++
++    # 检查是否提供了PKG_PATH
++    if [[ -z "$PKG_PATH" ]]; then
++        log_error "错误: 请提供 PKG_PATH"
++        show_help
++        exit 1
++    fi
++    
++    # 定义目录路径
++    PKG=$(basename "$PKG_PATH")
++    BUILD_DIR="$PKG_PATH/BUILD"
++    SOURCES_DIR="$PKG_PATH/SOURCES"
++    SPECS_DIR="$PKG_PATH/SPECS"
++
++    # 定义spec文件路径及展开宏定义后的spec路径
++    SPEC_FILE=$(ls "$SPECS_DIR"/*.spec 2>/dev/null)
++    if [ -z "$SPEC_FILE" ]; then
++        log_error "未找到SPEC文件: $SPECS_DIR/*.spec"
++        exit 1
++    fi
++    
++    # 检查是否只有一个spec文件
++    count=$(ls "$SPECS_DIR"/*.spec 2>/dev/null | wc -l)
++    if [ "$count" -gt 1 ]; then
++        log_error "找到多个SPEC文件，请确保目录中只有一个SPEC文件"
++        exit 1
++    fi
++    
++    NEW_SPEC_FILE="$SPEC_FILE-new"
++    rpmspec -P $SPEC_FILE > $NEW_SPEC_FILE
++
++    # 主流程
++    log_info "==== 开始进行打补丁操作 ===="
++    log_info "PKG_PATH: $PKG_PATH"
++    log_info "================================"
++
++    generate_patch_and_modify_spec
++            
++    log_info "==== 所有操作已完成 ===="
++}
++
++main "$@"
+diff -Nuar cqpkg_manager-1.0.1/usr/bin/upload cqpkg_manager-1.0.1-diff/usr/bin/upload
+--- cqpkg_manager-1.0.1/usr/bin/upload	1970-01-01 08:00:00.000000000 +0800
++++ cqpkg_manager-1.0.1-diff/usr/bin/upload	2025-06-17 17:05:46.340136545 +0800
+@@ -0,0 +1,196 @@
++#!/bin/bash
++
++# 颜色定义
++RED='\033[0;31m'
++GREEN='\033[0;32m'
++YELLOW='\033[0;33m'
++BLUE='\033[0;34m'
++NC='\033[0m' # 恢复默认颜色
++
++# 日志函数
++log_info() {
++    echo -e "${GREEN}[INFO]${NC} $1"
++}
++
++log_warn() {
++    echo -e "${YELLOW}[WARN]${NC} $1"
++}
++
++log_error() {
++    echo -e "${RED}[ERROR]${NC} $1" >&2
++}
++
++# 帮助信息
++show_help() {
++    echo -e "${BLUE}代码上传工具${NC}"
++    echo
++    echo -e "${YELLOW}功能说明：${NC}"
++    echo -e "  ${GREEN}•${NC} 将本地代码上传至GitLab仓库指定分支"
++    echo -e "  ${GREEN}•${NC} 支持提交信息规范和RPM包备份"
++    echo
++    echo -e "${YELLOW}使用语法：${NC}"
++    echo "  upload <路径名> <分支名> \"<提交信息>\""
++    echo
++    echo -e "${YELLOW}参数说明：${NC}"
++    echo -e "  ${GREEN}<路径名>${NC}      必需，目标仓库本地路径（如：~/projects/felix-scr）"
++    echo -e "  ${GREEN}<分支名>${NC}      必需，目标分支（如：dev/test 或 main）"
++    echo -e "  ${GREEN}<提交信息>${NC}    必需，遵循规范（如：\"修复(spec): 优化SPEC文件\"）"
++    echo
++    echo -e "${YELLOW}提交信息规范示例：${NC}"
++    echo -e "  ${GREEN}-${NC} 文档更新：\"文档(README): 更新安装步骤\""
++    echo -e "  ${GREEN}-${NC} SPEC修复：\"修复(spec): 移除无效宏定义\""
++    echo -e "  ${GREEN}-${NC} 上游同步：\"更新(同步欧拉仓库): 同步版本2.12.1\""
++    echo -e "  ${GREEN}-${NC} 上游同步：\"更新(同步龙蜥仓库): 同步版本2.12.1\""
++    echo -e "  ${GREEN}-${NC} 架构适配：\"适配(x86_64): 修复编译警告\""
++    echo
++    echo -e "${YELLOW}操作流程：${NC}"
++    echo -e "  ${GREEN}1.${NC} 选择代码来源（~/rpmbuild 或当前目录）"
++    echo -e "  ${GREEN}2.${NC} 自动清理/复制文件"
++    echo -e "  ${GREEN}3.${NC} 提交到指定分支并创建备份"
++    echo
++    echo -e "${YELLOW}示例：${NC}"
++    echo "  upload nginx main \"更新(龙蜥): 同步2.18.0版本\""
++}
++
++# 错误处理函数
++exit_with_error() {
++    log_error "$1"
++    exit 1
++}
++
++# 验证参数
++validate_arguments() {
++    if [[ $1 == "-h" || $1 == "--help" ]]; then
++        show_help
++        exit 0
++    fi
++    
++    if ! PKG_PATH="$(realpath -e "$1" 2>/dev/null)"; then
++        log_error "错误：请提供有效的路径参数" >&2
++    fi
++    BRANCH=$2
++    COMMIT_MSG=$3
++    
++    if [ -z "$PKG_PATH" ] || [ -z "$BRANCH" ] || [ -z "$COMMIT_MSG" ]; then
++        exit_with_error "缺少必填参数（路径名、分支、提交信息）"
++    fi
++    
++    log_info "参数验证通过"
++}
++
++# 代码复制逻辑
++copy_code_from_rpmbuild() {
++    log_info "正在从 ~/rpmbuild 复制代码..."
++    LOCAL_RPMBUILD="$HOME/rpmbuild"
++    
++    # 检查rpmbuild目录是否存在
++    if [ ! -d "$LOCAL_RPMBUILD" ]; then
++        exit_with_error "~/rpmbuild 目录不存在"
++    fi
++    
++    # 清理目标目录中的RPM相关文件（使用绝对路径避免误删）
++    rm -rf "$PKG_PATH/BUILD" "$PKG_PATH/SOURCES" "$PKG_PATH/SPECS" "$PKG_PATH/SOURCEINFO.yaml"
++    
++    # 复制文件（保留目录结构）
++    if ! cp -rf "$LOCAL_RPMBUILD"/. "$PKG_PATH/"; then
++        exit_with_error "复制文件失败"
++    fi
++    
++    log_info "代码复制完成"
++}
++
++# 管理Git分支
++manage_git_branch() {
++    log_info "进入仓库目录: $PKG_PATH"
++    cd "$PKG_PATH" || exit_with_error "目录不存在: $PKG_PATH"
++    
++    log_info "切换到分支: $BRANCH"
++    git branch -M "$BRANCH"  # 强制切换/创建分支
++    git checkout "$BRANCH"    # 确保在目标分支
++    
++    log_info "分支管理完成"
++}
++
++# 提交并推送代码
++commit_and_push_code() {
++    log_info "准备提交代码..."
++    git add -A
++    
++    log_info "提交代码 with message: $COMMIT_MSG"
++    if ! git commit -m "$COMMIT_MSG"; then
++        log_warn "提交失败，可能没有代码变更"
++        exit 0  # 无变更时正常退出
++    fi
++    
++    log_info "正在推送至 origin/$BRANCH..."
++    if ! git push -uf origin "$BRANCH"; then
++        exit_with_error "代码推送失败，请检查网络和权限"
++    fi
++    
++    log_info "代码推送完成"
++}
++
++# 备份RPM包
++backup_rpm_packages() {
++    local backup_dir="../success/RPMS"
++    log_info "准备备份RPM包到 $backup_dir"
++    
++    mkdir -p "$backup_dir"/{noarch,x86_64}
++    
++    # 备份noarch架构包
++    if ls -1 "$PKG_PATH/RPMS/noarch"/*.rpm &> /dev/null; then
++        log_info "备份noarch架构RPM包..."
++        cp -v "$PKG_PATH/RPMS/noarch"/*.rpm "$backup_dir/noarch/"
++    else
++        log_warn "未找到noarch架构RPM包"
++    fi
++    
++    # 备份x86_64架构包
++    if ls -1 "$PKG_PATH/RPMS/x86_64"/*.rpm &> /dev/null; then
++        log_info "备份x86_64架构RPM包..."
++        cp -v "$PKG_PATH/RPMS/x86_64"/*.rpm "$backup_dir/x86_64/"
++    else
++        log_warn "未找到x86_64架构RPM包"
++    fi
++    
++    log_info "RPM包备份完成"
++}
++
++# 主函数
++main() {
++    # 1. 验证参数
++    validate_arguments "$@"
++    
++    log_info "开始执行代码上传流程"
++    
++    # 2. 交互式确认代码来源
++    read -p "是否从 ~/rpmbuild 目录上传代码？(y/yes/其他跳过): " choice
++    choice=$(echo "$choice" | tr '[:upper:]' '[:lower:]')
++    
++    if [[ "$choice" =~ ^(y|yes)$ ]]; then
++        copy_code_from_rpmbuild
++    else
++        log_info "使用当前目录代码: $PKG_PATH"
++    fi
++    
++    # 3. 管理Git分支
++    manage_git_branch
++    
++    # 4. 提交并推送代码
++    commit_and_push_code
++    
++    # 5. 备份RPM包（仅当存在RPM文件时）
++    if [ "$(ls -A "$PKG_PATH/RPMS" 2>/dev/null)" ]; then
++        
++        log_info "开始备份RPM包"
++        backup_rpm_packages
++    else
++        log_warn "警告：未找到RPM文件，跳过备份"
++    fi
++    
++    log_info "${GREEN}所有操作已完成！${NC}"
++    log_info "代码已推送至 $BRANCH 分支"
++}
++
++# 执行主函数
++main "$@"
+diff -Nuar cqpkg_manager-1.0.1/usr/share/man/zh_CN/man1/clone.1 cqpkg_manager-1.0.1-diff/usr/share/man/zh_CN/man1/clone.1
+--- cqpkg_manager-1.0.1/usr/share/man/zh_CN/man1/clone.1	1970-01-01 08:00:00.000000000 +0800
++++ cqpkg_manager-1.0.1-diff/usr/share/man/zh_CN/man1/clone.1	2025-06-17 17:05:46.339136540 +0800
+@@ -0,0 +1,41 @@
++.\" 请勿修改此文件！它是为cqpkg_manager生成的
++.TH CLONE "1" "2025-06-16" "cqpkg_manager" "用户命令"
++.SH 名称
++clone \- 从指定仓库克隆软件包源码并配置RPM构建环境
++.SH 简介
++.B clone
++\fI\,包名\/\fR
++.SH 说明
++.\" 在此处添加任何其他描述
++.PP
++从指定仓库克隆软件包源码并自动配置RPM构建环境，支持欧拉（OpenEuler）、龙蜥（Anolis OS）和CQ内部仓库，生成包含开源协议和上游信息的SOURCEINFO.yaml元数据文件。
++.SS "操作流程"
++.TP
++1. 输入仓库类型（a=欧拉, b=龙蜥, 其他=CQ内部仓库）
++.TP
++2. 输入分支名（默认：master）
++.TP
++3. 自动克隆代码
++.TP
++4. 配置/root/rpmbuild目录结构（y/n）
++.TP
++5. 生成SOURCEINFO.yaml（欧拉/龙蜥仓库）
++.SS "参数说明"
++.TP
++\fB包名\fR
++必需，软件包名称（如：httpd）
++.TP
++\fB\-h\fR, \fB\-\-help\fR
++显示此帮助信息
++.SH 作者
++Xuebing Li
++.SH "报告错误"
++发送邮箱至 \fIlixuebing@cqsoftware.com.cn\fR
++.SH 版权
++版权 \(co 2025 CQ Software.
++.br
++本软件按MIT许可证发布
++.SH "参见"
++.B upload(1), compile(1)
++.br
++官方文档: https://github.com/lxb162649/cqpkg
+diff -Nuar cqpkg_manager-1.0.1/usr/share/man/zh_CN/man1/compile.1 cqpkg_manager-1.0.1-diff/usr/share/man/zh_CN/man1/compile.1
+--- cqpkg_manager-1.0.1/usr/share/man/zh_CN/man1/compile.1	1970-01-01 08:00:00.000000000 +0800
++++ cqpkg_manager-1.0.1-diff/usr/share/man/zh_CN/man1/compile.1	2025-06-17 17:12:45.602461164 +0800
+@@ -0,0 +1,47 @@
++.\" 请勿修改此文件！它是为cqpkg_manager生成的
++.TH COMPILE "1" "2025-06-16" "cqpkg_manager" "用户命令"
++.SH 名称
++compile \- RPM包编译工具，自动安装依赖并构建RPM包
++.SH 简介
++.B compile
++[\fI\,选项\/\fR]... [\fI\,路径名\/\fR]
++.SH 说明
++.\" 在此处添加任何其他描述
++.PP
++自动安装编译依赖、构建RPM包并展示结果，支持两种模式：全局模式（基于/root/rpmbuild）和本地模式（指定源码包目录）。
++.SS "选项说明"
++.TP
++\fB\-ba\fR
++构建二进制和源码RPM包
++.TP
++\fB\-bp\fR
++只执行到编译前阶段
++.TP
++\fB\-bs\fR
++只构建源码RPM包
++.TP
++\fB\-h\fR, \fB\-\-help\fR
++显示此帮助信息
++.SS "模式说明"
++.TP
++全局模式
++基于默认的 /root/rpmbuild 目录（即：compile）
++.TP
++本地模式
++基于指定的源码包目录（如：compile felix-scr）
++.SS "参数说明"
++.TP
++\fB路径名\fR
++可选，源码包目录名（默认使用 /root/rpmbuild）
++.SH 作者
++Xuebing Li
++.SH "报告错误"
++发送邮箱至 \fIlixuebing@cqsoftware.com.cn\fR
++.SH 版权
++版权 \(co 2025 CQ Software.
++.br
++本软件按MIT许可证发布
++.SH "参见"
++.B clone(1), upload(1)
++.br
++官方文档: https://github.com/lxb162649/cqpkg
+diff -Nuar cqpkg_manager-1.0.1/usr/share/man/zh_CN/man1/cqpatch.1 cqpkg_manager-1.0.1-diff/usr/share/man/zh_CN/man1/cqpatch.1
+--- cqpkg_manager-1.0.1/usr/share/man/zh_CN/man1/cqpatch.1	1970-01-01 08:00:00.000000000 +0800
++++ cqpkg_manager-1.0.1-diff/usr/share/man/zh_CN/man1/cqpatch.1	2025-06-17 17:12:45.602461164 +0800
+@@ -0,0 +1,41 @@
++.\" 请勿修改此文件！它是为cqpkg_manager生成的
++.TH CQPATCH "1" "2025-06-17" "cqpkg_manager" "用户命令"
++.SH 名称
++cqpatch \- 生成软件包补丁并修改SPEC文件
++.SH 简介
++.B cqpatch
++[\fI\,选项\/\fR]... [\fI\,路径名\/\fR]
++.SH 说明
++.\" 在此处添加任何其他描述
++.PP
++从指定路径的软件包生成补丁文件，并自动修改对应的SPEC文件。支持下载源码、创建补丁对比目录、更新SPEC中的Patch配置、递增Release版本及添加Changelog记录，适用于RPM构建流程。
++.SS "操作流程"
++.TP
++1. 下载源码并解压至BUILD目录
++.TP
++2. 创建源码对比目录供手动修改
++.TP
++3. 输入补丁文件名并生成.patch文件
++.TP
++4. 自动更新SPEC文件中的Patch配置
++.TP
++5. 递增Release版本并添加Changelog记录
++.SS "参数说明"
++.TP
++\fBPKG_PATH\fR
++必需，BUILD目录的上一级目录（例：/path/to/package 或 包名）
++.TP
++\fB\-h, \-\-help\fR
++显示此帮助信息
++.SH 作者
++Xuebing Li
++.SH "报告错误"
++发送邮箱至 \fIlixuebing@cqsoftware.com.cn\fR
++.SH 版权
++版权 \(co 2025 CQ Software.
++.br
++本软件按MIT许可证发布
++.SH "参见"
++.B clone(1), upload(1) 
++.br
++官方文档: https://github.com/lxb162649/cqpkg
+diff -Nuar cqpkg_manager-1.0.1/usr/share/man/zh_CN/man1/upload.1 cqpkg_manager-1.0.1-diff/usr/share/man/zh_CN/man1/upload.1
+--- cqpkg_manager-1.0.1/usr/share/man/zh_CN/man1/upload.1	1970-01-01 08:00:00.000000000 +0800
++++ cqpkg_manager-1.0.1-diff/usr/share/man/zh_CN/man1/upload.1	2025-06-17 17:05:46.339136540 +0800
+@@ -0,0 +1,52 @@
++.\" 请勿修改此文件！它是为cqpkg_manager生成的
++.TH UPLOAD "1" "2025-06-16" "cqpkg_manager" "用户命令"
++.SH 名称
++upload \- 将本地代码上传至GitLab仓库指定分支
++.SH 简介
++.B upload
++\fI\,路径名 分支名 "提交信息"\/\fR
++.SH 说明
++.\" 在此处添加任何其他描述
++.PP
++将本地代码上传至GitLab仓库指定分支，支持提交信息规范，自动选择代码来源（~/rpmbuild或当前目录）并创建备份。
++.SS "提交信息规范"
++.TP
++文档更新
++"文档(README): 更新安装步骤"
++.TP
++SPEC修复
++"修复(spec): 移除无效宏定义"
++.TP
++上游同步
++"更新(同步欧拉仓库): 同步版本2.12.1"
++.TP
++架构适配
++"适配(x86_64): 修复编译警告"
++.TP
++\fB路径名\fR
++必需，目标仓库名称（如：nginx）
++.TP
++\fB分支名\fR
++必需，目标分支（如：main）
++.TP
++\fB"提交信息"\fR
++必需，遵循规范的提交信息
++.SS "操作流程"
++.TP
++1. 选择代码来源（~/rpmbuild 或当前目录）
++.TP
++2. 自动清理/复制文件
++.TP
++3. 提交到指定分支并创建备份
++.SH 作者
++Xuebing Li
++.SH "报告错误"
++发送邮箱至 \fIlixuebing@cqsoftware.com.cn\fR
++.SH 版权
++版权 \(co 2025 CQ Software.
++.br
++本软件按MIT许可证发布
++.SH "参见"
++.B clone(1), compile(1)
++.br
++官方文档: https://github.com/lxb162649/cqpkg

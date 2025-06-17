@@ -2,15 +2,18 @@
 
 Name:           cqpkg_manager
 Version:        1.0.1
-Release:        1
+Release:        2
 Summary:        Manage CQ system software packages.
 
 License:        GPLv3+
 URL:            https://github.com/lxb162649/cqpkg
 Source0:        %{name}-%{version}.tar.gz
+Patch0:   		cqos-func-add-cqpkg.patch
 
 Requires:  git 
 Requires:  yum-utils
+Requires:  rpm-build
+Requires:  diffutils
 
 %description
 This project is mainly used to manage the CQ system software package.
@@ -28,6 +31,10 @@ make install DESTDIR=$RPM_BUILD_ROOT
 %{_mandir}/zh_CN/man1/*
 
 %changelog
+* Tue Jun 17 2025 lixuebing <lixuebing@cqsoftware.com.cn> - 1.0.1-2
+- Add cqpatch executable file
+- Add cqpatch Chinese man manual
+
 * Tue Jun 17 2025 Xuebing Li <lixuebing@cqsoftware.com.cn> - 1.0.1-1
 - Upgrade version to 1.0.1.
 
