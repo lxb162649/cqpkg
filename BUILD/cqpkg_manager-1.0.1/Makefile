@@ -6,10 +6,10 @@ BINDIR = $(PREFIX)/bin
 MANDIR = $(PREFIX)/share/man/zh_CN/man1
 
 # 明确可执行文件列表
-BIN_FILES := clone compile upload
+BIN_FILES := $(wildcard usr/bin/*)
 
 # man手册文件列表
-MAN_FILES := $(wildcard man/zh_CN/man1/*.1)
+MAN_FILES := $(wildcard usr/share/man/zh_CN/man1/*.1)
 
 # 安装工具（可执行文件755权限，man手册644权限）
 INSTALL_BIN = install -Dm755
@@ -25,8 +25,8 @@ install-bin: $(BIN_FILES)
 	@echo "安装可执行文件到 $(DESTDIR)$(BINDIR)..."
 	@mkdir -p $(DESTDIR)$(BINDIR)
 	@for file in $(BIN_FILES); do \
-		$(INSTALL_BIN) $$file $(DESTDIR)$(BINDIR)/$$file; \
-		echo "已安装 $$file 到 $(DESTDIR)$(BINDIR)"; \
+		$(INSTALL_BIN) $$file $(DESTDIR)$(BINDIR)/$$(basename $$file); \
+		echo "已安装 $$(basename $$file) 到 $(DESTDIR)$(BINDIR)"; \
 	done
 
 # 安装man手册到MAN_DIR
@@ -35,7 +35,7 @@ install-man: $(MAN_FILES)
 	@mkdir -p $(DESTDIR)$(MANDIR)
 	@for manpage in $(MAN_FILES); do \
 		$(INSTALL_MAN) $$manpage $(DESTDIR)$(MANDIR)/$$(basename $$manpage); \
-		echo "已安装 $$manpage:$$(basename $$manpage) 到 $(DESTDIR)$(MANDIR)"; \
+		echo "已安装 $$(basename $$manpage) 到 $(DESTDIR)$(MANDIR)"; \
 	done
 	@if [ -z "$(DESTDIR)" ]; then $(MANDOC) -q; fi  # 非RPM模式时更新索引
 
@@ -43,9 +43,10 @@ install-man: $(MAN_FILES)
 uninstall:
 	@echo "从 $(DESTDIR)$(BINDIR) 卸载可执行文件..."
 	@for file in $(BIN_FILES); do \
-		if [ -f $(DESTDIR)$(BINDIR)/$$file ]; then \
-			rm -f $(DESTDIR)$(BINDIR)/$$file; \
-			echo "已删除 $(DESTDIR)$(BINDIR)/$$file"; \
+		file=$(DESTDIR)$(BINDIR)/$$(basename $$file)
+		if [ -f $$file ]; then \
+			rm -f $$file; \
+			echo "已删除 $$file"; \
 		fi; \
 	done
 	

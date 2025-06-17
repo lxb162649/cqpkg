@@ -1,0 +1,311 @@
+#!/bin/bash
+
+# 设置严格模式，遇到错误立即退出
+set -euo pipefail
+
+# 颜色定义
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# 日志函数
+log_info() {
+    echo -e "${GREEN}[INFO]${NC} $1"
+}
+
+log_warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# 显示帮助信息
+show_help() {
+    echo -e "${BLUE}功能说明：${NC}"
+    echo -e "  ${GREEN}•${NC} 生成软件包补丁并修改SPEC文件（适用于RPM构建流程）"
+    echo -e "  ${GREEN}•${NC} 自动下载源码、解压并创建补丁对比目录"
+    echo -e "  ${GREEN}•${NC} 支持更新SPEC文件中的Patch、Release版本及Changelog"
+    echo
+    echo -e "${BLUE}使用语法：${NC}"
+    echo -e "  $0 ${YELLOW} <PKG_PATH>${NC}"
+    echo
+    echo -e "${BLUE}参数说明：${NC}"
+    echo -e "  ${YELLOW}<PKG_PATH>${NC}    必需，BUILD目录的上一级目录（例：/path/to/package）"
+    echo
+    echo -e "${BLUE}选项：${NC}"
+    echo -e "  ${YELLOW}-h, --help${NC}       显示此帮助信息"
+    echo
+    echo -e "${BLUE}操作流程：${NC}"
+    echo -e "  ${GREEN}1.${NC} 下载源码并解压至BUILD目录"
+    echo -e "  ${GREEN}2.${NC} 手动修改对比目录中的源码"
+    echo -e "  ${GREEN}3.${NC} 输入补丁文件名并生成.patch文件"
+    echo -e "  ${GREEN}4.${NC} 自动更新SPEC文件中的Patch配置"
+    echo -e "  ${GREEN}5.${NC} 递增Release版本并添加Changelog记录"
+    echo
+    echo -e "${BLUE}示例：${NC}"
+    echo -e "  ${GREEN}1.${NC} 对当前目录下的httpd包生成补丁"
+    echo -e "     $0 httpd"
+    echo -e "  ${GREEN}2.${NC} 对指定路径的nginx包执行补丁流程"
+    echo -e "     $0 /root/rpmbuild/SPECS/nginx"
+    echo
+    echo -e "${RED}!!!注意：${NC} 若仅提供包名（如httpd），需确保包目录在当前工作路径下"
+}
+
+# 函数：生成补丁并修改SPEC文件
+generate_patch_and_modify_spec() {
+    log_info "正在生成补丁..."
+
+    # 获取源码路径
+    local src_path=$(grep '^Source0:' "$NEW_SPEC_FILE" | sed 's/^Source0:\s*//')
+    
+    # 获取压缩源码文件名称
+    local src_name_gz=$(basename "$src_path")
+    if [ ! -f "$SOURCES_DIR/$src_name_gz" ]; then
+        log_info "正在下载源码: $src_name_gz ..."
+        if ! wget "$src_path" -P "$SOURCES_DIR" >/dev/null 2>&1; then
+            log_error "下载源码失败: $src_path"
+            exit 1
+        fi
+    else
+        log_info "源码已存在: $SOURCES_DIR/$src_name_gz"
+    fi
+    
+    # 解压源码
+    log_info "正在解压源码..."
+    if ! rpmbuild -bp -D "_topdir $PKG_PATH" "$SPEC_FILE" >/dev/null 2>&1; then
+        log_error "解压源码失败"
+        exit 1
+    fi
+
+    # 获取源码名（从BUILD目录内容推断）
+    src_name=$(ls "$BUILD_DIR" 2>/dev/null | head -n 1)
+    if [ -z "$src_name" ]; then
+        log_error "未找到BUILD目录下的源文件"
+        exit 1
+    fi
+    
+    # 获取包名（从源码名中获取，去掉版本号）
+    local pkg_name=$(echo "$src_name" | cut -d '-' -f 1)
+    src_path=$(ls -d "$BUILD_DIR/$src_name")
+    log_info "处理源码目录: $src_path"
+
+    # 创建打补丁所需目录
+    local src_diff_path="$src_path-diff"
+    cp -rf "$src_path" "$src_diff_path"
+
+    log_info "------------------------------"
+    log_info "请手动修改目录: $src_diff_path"
+    log_info "修改完成后输入补丁文件名继续..."
+    
+    local patch_name
+    read -p "请输入补丁文件名（例：cqos-func-add-chinese-man-page.patch）: " patch_name
+    if [ -z "$patch_name" ]; then
+        log_error "补丁文件名不能为空"
+        exit 1
+    fi
+    
+    log_info "继续执行脚本..."
+
+    # 生成补丁
+    cd "$BUILD_DIR"
+    diff -Nuar "${src_name}" "${src_name}-diff" > "${SOURCES_DIR}/${patch_name}" || true
+    log_info "已生成补丁: ${SOURCES_DIR}/${patch_name}"
+
+    # 清理工作目录
+    rm -rf "$src_diff_path"
+
+    ############################## 修改 SPEC 文件 ##############################
+    cd "$SPECS_DIR"
+    log_info "正在修改 SPEC 文件: $SPEC_FILE ..."
+    log_info "spec 文件修改如下："
+
+    # 获取spec文件中的最后一个patch行，并获取需要添加patch的数字部分
+    last_patch=$(grep '^Patch[0-9]\+:' "$SPEC_FILE" | tail -n 1 | sed 's/:.*//' || true)
+    if [ -z "$last_patch" ]; then
+        new_patch_num=0
+    else
+        patch_num=$(echo "$last_patch" | grep -o '[0-9]\+')
+        new_patch_num=$((patch_num + 1))
+    fi
+
+    # 添加新的patch行
+    new_patch="Patch${new_patch_num}:   ${patch_name}"
+    if [ $new_patch_num -eq 0 ]; then
+        last_source=$(grep '^Source[0-9]\+:' "$SPEC_FILE" | tail -n 1 | cut -d':' -f1 || true)
+        if [ -n "$last_source" ]; then
+            sed -i "/^$last_source/a$new_patch" "$SPEC_FILE"
+            log_info "$(grep '^Source[0-9]\+:' "$SPEC_FILE" | tail -n 1)"
+            log_info "添加如下"
+            log_info "$new_patch"
+            log_info "----------"
+        else
+            log_error "未找到Source行，无法添加Patch"
+            exit 1
+        fi
+
+        # 添加 patch 应用命令
+        if grep -q '%setup' "$SPEC_FILE"; then
+            sed -i "/^%setup/a%patch${new_patch_num} -p1" "$SPEC_FILE"
+            log_info "$(grep '%setup' "$SPEC_FILE")"
+            log_info "添加如下"
+            log_info "%patch${new_patch_num} -p1"
+            log_info "----------"
+        else
+            log_info "此包自动打补丁，无需添加patch应用命令"
+        fi
+    else
+        sed -i "/^$last_patch/a$new_patch" "$SPEC_FILE"
+
+        # 添加 patch 应用命令
+        if grep -q '%setup' "$SPEC_FILE"; then
+            sed -i "/^%patch${patch_num}/a%patch${new_patch_num} -p1" "$SPEC_FILE"
+            log_info "$(grep '^Patch[0-9]\+:' "$SPEC_FILE" | tail -n 1)"
+            log_info "添加如下"
+            log_info "%patch${new_patch_num} -p1"
+            log_info "----------"
+        else
+            log_info "此包自动打补丁，无需添加patch应用命令"
+        fi
+    fi
+
+    # 提取 Epoch
+    epoch=$(grep '^Epoch:' "$SPEC_FILE" | sed 's/^Epoch:\s*//' || true)
+
+    # 提取 Version
+    version=$(grep '^Version:' "$SPEC_FILE" | sed 's/^Version:\s*//')
+    if [ -z "$version" ]; then
+        log_error "未找到Version行"
+        exit 1
+    fi
+
+    # 提取 Release
+    old_release=$(grep '^Release:' "$SPEC_FILE" | sed 's/^Release:\s*//; s/%{?dist}.*//')
+    if [ -z "$old_release" ]; then
+        log_error "未找到Release行"
+        exit 1
+    fi
+    new_release=$((old_release + 1)) 
+
+    if [ -z "$epoch" ]; then
+        version_string="$version-$new_release"
+    else
+        version_string="$epoch:$version-$new_release"
+    fi
+
+    # 更新 Release
+    sed -i "s/^\(Release:\s*\)$old_release/\1$new_release/" "$SPEC_FILE"
+    
+    # 更新changelog
+    local date=$(LANG=en_US.UTF-8 date '+%a %b %d %Y')
+    local user_name=$(git config --global user.name)
+    local user_email=$(git config --global user.email)
+    
+    if [ -z "$user_name" ]; then
+        read -p "请设置用户名: " user_name
+        if [ -z "$user_name" ]; then
+            log_error "用户名不能为空"
+            exit 1
+        fi
+        git config --global user.name "$user_name"
+    fi
+    
+    if [ -z "$user_email" ]; then
+        read -p "请设置邮箱: " user_email
+        if [ -z "$user_email" ]; then
+            log_error "邮箱不能为空"
+            exit 1
+        fi
+        git config --global user.email "$user_email"
+    fi
+    
+    local log
+    read -er -p "请输入此次更改日志（例：- Add Chinese man manual\n- Update the README.md file）: " log
+    if [ -z "$log" ]; then
+        log_warn "更改日志为空"
+    fi
+    
+    changelog="* $date $user_name <$user_email> - $version_string\n$log\n"
+    echo -e "adafasfasegsf:$changelog"
+    sed -i "/%changelog/a$changelog" "$SPEC_FILE"
+    log_info "%changelog"
+    log_info "添加如下"
+    log_info "$changelog"
+    log_info "----------"
+    log_info "SPEC 文件修改完成"
+    rm -rf "$NEW_SPEC_FILE"
+}
+
+main() {
+    # 初始化全局变量
+    ACTION=""
+    PKG_PATH=""
+    # 解析命令行参数（支持选项在任意位置）
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            *)
+                # 如果参数不是选项，则认为是PKG_PATH
+                if [[ -z "$PKG_PATH" ]]; then
+                    if ! PKG_PATH="$(realpath -e "$1" 2>/dev/null)"; then
+                        log_error "错误：请提供有效的路径参数"
+                        show_help
+                        exit 1
+                    fi
+                else
+                    log_error "错误: 重复的路径参数 '$1'"
+                    show_help
+                    exit 1
+                fi
+                ;;
+        esac
+        shift
+    done
+
+    # 检查是否提供了PKG_PATH
+    if [[ -z "$PKG_PATH" ]]; then
+        log_error "错误: 请提供 PKG_PATH"
+        show_help
+        exit 1
+    fi
+    
+    # 定义目录路径
+    PKG=$(basename "$PKG_PATH")
+    BUILD_DIR="$PKG_PATH/BUILD"
+    SOURCES_DIR="$PKG_PATH/SOURCES"
+    SPECS_DIR="$PKG_PATH/SPECS"
+
+    # 定义spec文件路径及展开宏定义后的spec路径
+    SPEC_FILE=$(ls "$SPECS_DIR"/*.spec 2>/dev/null)
+    if [ -z "$SPEC_FILE" ]; then
+        log_error "未找到SPEC文件: $SPECS_DIR/*.spec"
+        exit 1
+    fi
+    
+    # 检查是否只有一个spec文件
+    count=$(ls "$SPECS_DIR"/*.spec 2>/dev/null | wc -l)
+    if [ "$count" -gt 1 ]; then
+        log_error "找到多个SPEC文件，请确保目录中只有一个SPEC文件"
+        exit 1
+    fi
+    
+    NEW_SPEC_FILE="$SPEC_FILE-new"
+    rpmspec -P $SPEC_FILE > $NEW_SPEC_FILE
+
+    # 主流程
+    log_info "==== 开始进行打补丁操作 ===="
+    log_info "PKG_PATH: $PKG_PATH"
+    log_info "================================"
+
+    generate_patch_and_modify_spec
+            
+    log_info "==== 所有操作已完成 ===="
+}
+
+main "$@"
