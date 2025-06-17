@@ -1,0 +1,41 @@
+.\" 请勿修改此文件！它是为cqpkg_manager生成的
+.TH CQPATCH "1" "2025-06-17" "cqpkg_manager" "用户命令"
+.SH 名称
+cqpatch \- 生成软件包补丁并修改SPEC文件
+.SH 简介
+.B cqpatch
+[\fI\,选项\/\fR]... [\fI\,路径名\/\fR]
+.SH 说明
+.\" 在此处添加任何其他描述
+.PP
+从指定路径的软件包生成补丁文件，并自动修改对应的SPEC文件。支持下载源码、创建补丁对比目录、更新SPEC中的Patch配置、递增Release版本及添加Changelog记录，适用于RPM构建流程。
+.SS "操作流程"
+.TP
+1. 下载源码并解压至BUILD目录
+.TP
+2. 创建源码对比目录供手动修改
+.TP
+3. 输入补丁文件名并生成.patch文件
+.TP
+4. 自动更新SPEC文件中的Patch配置
+.TP
+5. 递增Release版本并添加Changelog记录
+.SS "参数说明"
+.TP
+\fBPKG_PATH\fR
+必需，BUILD目录的上一级目录（例：/path/to/package 或 包名）
+.TP
+\fB\-h, \-\-help\fR
+显示此帮助信息
+.SH 作者
+Xuebing Li
+.SH "报告错误"
+发送邮箱至 \fIlixuebing@cqsoftware.com.cn\fR
+.SH 版权
+版权 \(co 2025 CQ Software.
+.br
+本软件按MIT许可证发布
+.SH "参见"
+.B clone(1), upload(1) 
+.br
+官方文档: https://github.com/lxb162649/cqpkg
