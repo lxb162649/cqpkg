@@ -1,0 +1,54 @@
+diff -Nuar cqpkg_manager-0.0.1/clone cqpkg_manager-0.0.1-diff/clone
+--- cqpkg_manager-0.0.1/clone	2025-06-17 12:32:27.985953923 +0800
++++ cqpkg_manager-0.0.1-diff/clone	2025-06-17 14:25:15.397155046 +0800
+@@ -118,7 +118,7 @@
+             log_info "删除.git目录"
+         fi
+     fi
+-    
++
+     log_info "整理文件完成"
+     return 0
+ }
+@@ -288,6 +288,13 @@
+     # 是否创建rpmbuild目录
+     read -p "是否将代码放入$HOME/rpmbuild目录（输入y放入此目录，默认放到 $PKG_PATH 目录）: " CREATE_RPMBUILD_DIR
+     
++    # 设置工作路径
++    if [[ "$CREATE_RPMBUILD_DIR" == "y" ]]; then
++        WORK_PATH="$HOME/rpmbuild"  # 放入$HOME/rpmbuild目录
++    else
++        WORK_PATH="$PKG_PATH"  # 保持原目录结构
++    fi
++
+     # 清理环境
+     if ! clean_env; then
+         exit 1
+@@ -317,7 +324,11 @@
+             fi
+             log_info "CQ内部仓库克隆成功!"
+             
+-            # CQ仓库不需要生成元数据，直接退出
++            if [[ "$CREATE_RPMBUILD_DIR" == "y" ]]; then
++                log_info "正在将 $PKG_NAME 移动到工作目录 $WORK_PATH ..."
++                mv "$PKG_PATH" "$WORK_PATH"
++                log_info "成功将 $PKG_NAME 移动到工作目录 $WORK_PATH!"
++            fi
+             exit 0
+             ;;
+     esac
+@@ -329,13 +340,7 @@
+         fi
+     fi
+     
+-    # 设置工作路径
+-    if [[ "$CREATE_RPMBUILD_DIR" == "y" ]]; then
+-        WORK_PATH="$HOME/rpmbuild"  # 放入$HOME/rpmbuild目录
+-    else
+-        WORK_PATH="$PKG_PATH"  # 保持原目录结构
+-    fi
+-    
++
+     # 移动文件
+     if ! mv_files; then
+         exit 1
