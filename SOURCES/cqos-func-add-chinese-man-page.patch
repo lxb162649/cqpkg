@@ -1,0 +1,247 @@
+diff -Nuar cqpkg_manager-0.0.1/Makefile cqpkg_manager-0.0.1-diff/Makefile
+--- cqpkg_manager-0.0.1/Makefile	2025-05-30 13:29:04.000000000 +0800
++++ cqpkg_manager-0.0.1-diff/Makefile	2025-06-16 18:15:14.198984742 +0800
+@@ -1,37 +1,68 @@
+ # Makefile for cqpkg_manager
+ 
+-# 定义变量
++# 定义安装路径
+ PREFIX ?= /usr
+-BINDIR ?= $(PREFIX)/bin
++BINDIR = $(PREFIX)/bin
++MANDIR = $(PREFIX)/share/man/zh_CN/man1
+ 
+-# 获取所有需要安装的文件（排除README.md和Makefile）
+-FILES := $(filter-out README.md Makefile, $(wildcard *))
++# 明确可执行文件列表
++BIN_FILES := clone compile upload
+ 
+-# 默认目标
+-all:
++# man手册文件列表
++MAN_FILES := $(wildcard man/zh_CN/man1/*.1)
+ 
+-# 安装目标
+-install: $(FILES)
+-	@echo "Installing files to $(BINDIR)..."
++# 安装工具（可执行文件755权限，man手册644权限）
++INSTALL_BIN = install -Dm755
++INSTALL_MAN = install -Dm644
++RM = rm -rf
++MANDOC = mandb
++
++# 合并install目标（避免重复定义）
++install: install-bin install-man
++
++# 安装可执行文件到BIN_DIR
++install-bin: $(BIN_FILES)
++	@echo "安装可执行文件到 $(DESTDIR)$(BINDIR)..."
+ 	@mkdir -p $(DESTDIR)$(BINDIR)
+-	@for file in $(FILES); do \
+-		echo "Installing $$file to $(DESTDIR)$(BINDIR)"; \
+-		install -m 0755 $$file $(DESTDIR)$(BINDIR)/$$file; \
++	@for file in $(BIN_FILES); do \
++		$(INSTALL_BIN) $$file $(DESTDIR)$(BINDIR)/$$file; \
++		echo "已安装 $$file 到 $(DESTDIR)$(BINDIR)"; \
+ 	done
+ 
++# 安装man手册到MAN_DIR
++install-man: $(MAN_FILES)
++	@echo "安装man手册到 $(DESTDIR)$(MANDIR)..."
++	@mkdir -p $(DESTDIR)$(MANDIR)
++	@for manpage in $(MAN_FILES); do \
++		$(INSTALL_MAN) $$manpage $(DESTDIR)$(MANDIR)/$$(basename $$manpage); \
++		echo "已安装 $$manpage:$$(basename $$manpage) 到 $(DESTDIR)$(MANDIR)"; \
++	done
++	@if [ -z "$(DESTDIR)" ]; then $(MANDOC) -q; fi  # 非RPM模式时更新索引
++
+ # 卸载目标
+ uninstall:
+-	@echo "Uninstalling files from $(BINDIR)..."
+-	@for file in $(FILES); do \
++	@echo "从 $(DESTDIR)$(BINDIR) 卸载可执行文件..."
++	@for file in $(BIN_FILES); do \
+ 		if [ -f $(DESTDIR)$(BINDIR)/$$file ]; then \
+-            echo "Removing $(DESTDIR)$(BINDIR)/$$file"; \
+-            rm -f $(DESTDIR)$(BINDIR)/$$file; \
+-        fi; \
+-    done
++			rm -f $(DESTDIR)$(BINDIR)/$$file; \
++			echo "已删除 $(DESTDIR)$(BINDIR)/$$file"; \
++		fi; \
++	done
++	
++	@echo "从 $(DESTDIR)$(MANDIR) 卸载man手册..."
++	@for manpage in $(MAN_FILES); do \
++		manfile=$(DESTDIR)$(MANDIR)/$$(basename $$manpage); \
++		if [ -f $$manfile ]; then \
++			rm -f $$manfile; \
++			echo "已删除 $$manfile"; \
++		fi; \
++	done
++	@if [ -z "$(DESTDIR)" ]; then $(MANDOC) -q; fi
++	@echo "卸载完成"
+ 
+-# 清理目标（如果需要）
++# 清理目标
+ clean:
+-	@echo "Nothing to clean."
++	@$(RM) *~
+ 
+-# 声明这些目标为伪目标
+-.PHONY: all install uninstall clean
+\ 文件尾没有换行符
++# 声明伪目标
++.PHONY: all install uninstall clean install-bin install-man
+diff -Nuar cqpkg_manager-0.0.1/man/zh_CN/man1/clone.1 cqpkg_manager-0.0.1-diff/man/zh_CN/man1/clone.1
+--- cqpkg_manager-0.0.1/man/zh_CN/man1/clone.1	1970-01-01 08:00:00.000000000 +0800
++++ cqpkg_manager-0.0.1-diff/man/zh_CN/man1/clone.1	2025-06-16 18:01:48.141622897 +0800
+@@ -0,0 +1,41 @@
++.\" 请勿修改此文件！它是为cqpkg_manager生成的
++.TH CLONE "1" "2025-06-16" "cqpkg_manager" "用户命令"
++.SH 名称
++clone \- 从指定仓库克隆软件包源码并配置RPM构建环境
++.SH 简介
++.B clone
++\fI\,包名\/\fR
++.SH 说明
++.\" 在此处添加任何其他描述
++.PP
++从指定仓库克隆软件包源码并自动配置RPM构建环境，支持欧拉（OpenEuler）、龙蜥（Anolis OS）和CQ内部仓库，生成包含开源协议和上游信息的SOURCEINFO.yaml元数据文件。
++.SS "操作流程"
++.TP
++1. 输入仓库类型（a=欧拉, b=龙蜥, 其他=CQ内部仓库）
++.TP
++2. 输入分支名（默认：master）
++.TP
++3. 自动克隆代码
++.TP
++4. 配置/root/rpmbuild目录结构（y/n）
++.TP
++5. 生成SOURCEINFO.yaml（欧拉/龙蜥仓库）
++.SS "参数说明"
++.TP
++\fB包名\fR
++必需，软件包名称（如：httpd）
++.TP
++\fB\-h\fR, \fB\-\-help\fR
++显示此帮助信息
++.SH 作者
++Xuebing Li
++.SH "报告错误"
++发送邮箱至 \fIlixuebing@cqsoftware.com.cn\fR
++.SH 版权
++版权 \(co 2025 CQ Software.
++.br
++本软件按MIT许可证发布
++.SH "参见"
++.B upload(1), compile(1)
++.br
++官方文档: https://github.com/lxb162649/cqpkg
+diff -Nuar cqpkg_manager-0.0.1/man/zh_CN/man1/compile.1 cqpkg_manager-0.0.1-diff/man/zh_CN/man1/compile.1
+--- cqpkg_manager-0.0.1/man/zh_CN/man1/compile.1	1970-01-01 08:00:00.000000000 +0800
++++ cqpkg_manager-0.0.1-diff/man/zh_CN/man1/compile.1	2025-06-16 18:03:26.403400109 +0800
+@@ -0,0 +1,47 @@
++.\" 请勿修改此文件！它是为cqpkg_manager生成的
++.TH COMPILE "1" "2025-06-16" "cqpkg_manager" "用户命令"
++.SH 名称
++compile \- RPM包编译工具，自动安装依赖并构建RPM包
++.SH 简介
++.B compile
++[\fI\,选项\/\fR]... [\fI\,路径名\/\fR]
++.SH 说明
++.\" 在此处添加任何其他描述
++.PP
++自动安装编译依赖、构建RPM包并展示结果，支持两种模式：全局模式（基于/root/rpmbuild）和本地模式（指定源码包目录）。
++.SS "选项说明"
++.TP
++\fB\-ba\fR
++构建二进制和源码RPM包
++.TP
++\fB\-bp\fR
++只执行到编译前阶段
++.TP
++\fB\-bs\fR
++只构建源码RPM包
++.TP
++\fB\-h\fR, \fB\-\-help\fR
++显示此帮助信息
++.SS "模式说明"
++.TP
++全局模式
++基于默认的 /root/rpmbuild 目录（即：compile）
++.TP
++本地模式
++基于指定的源码包目录（如：compile felix-scr）
++.SS "参数说明"
++.TP
++\fB路径名\fR
++可选，源码包目录名（默认使用 /root/rpmbuild）
++.SH 作者
++Xuebing Li
++.SH "报告错误"
++发送邮箱至 \fIlixuebing@cqsoftware.com.cn\fR
++.SH 版权
++版权 \(co 2025 CQ Software.
++.br
++本软件按MIT许可证发布
++.SH "参见"
++.B clone(1), upload(1)
++.br
++官方文档: https://github.com/lxb162649/cqpkg
+diff -Nuar cqpkg_manager-0.0.1/man/zh_CN/man1/upload.1 cqpkg_manager-0.0.1-diff/man/zh_CN/man1/upload.1
+--- cqpkg_manager-0.0.1/man/zh_CN/man1/upload.1	1970-01-01 08:00:00.000000000 +0800
++++ cqpkg_manager-0.0.1-diff/man/zh_CN/man1/upload.1	2025-06-16 18:03:30.297430909 +0800
+@@ -0,0 +1,52 @@
++.\" 请勿修改此文件！它是为cqpkg_manager生成的
++.TH UPLOAD "1" "2025-06-16" "cqpkg_manager" "用户命令"
++.SH 名称
++upload \- 将本地代码上传至GitLab仓库指定分支
++.SH 简介
++.B upload
++\fI\,路径名 分支名 "提交信息"\/\fR
++.SH 说明
++.\" 在此处添加任何其他描述
++.PP
++将本地代码上传至GitLab仓库指定分支，支持提交信息规范，自动选择代码来源（~/rpmbuild或当前目录）并创建备份。
++.SS "提交信息规范"
++.TP
++文档更新
++"文档(README): 更新安装步骤"
++.TP
++SPEC修复
++"修复(spec): 移除无效宏定义"
++.TP
++上游同步
++"更新(同步欧拉仓库): 同步版本2.12.1"
++.TP
++架构适配
++"适配(x86_64): 修复编译警告"
++.TP
++\fB路径名\fR
++必需，目标仓库名称（如：nginx）
++.TP
++\fB分支名\fR
++必需，目标分支（如：main）
++.TP
++\fB"提交信息"\fR
++必需，遵循规范的提交信息
++.SS "操作流程"
++.TP
++1. 选择代码来源（~/rpmbuild 或当前目录）
++.TP
++2. 自动清理/复制文件
++.TP
++3. 提交到指定分支并创建备份
++.SH 作者
++Xuebing Li
++.SH "报告错误"
++发送邮箱至 \fIlixuebing@cqsoftware.com.cn\fR
++.SH 版权
++版权 \(co 2025 CQ Software.
++.br
++本软件按MIT许可证发布
++.SH "参见"
++.B clone(1), compile(1)
++.br
++官方文档: https://github.com/lxb162649/cqpkg
