@@ -164,7 +164,7 @@ main() {
     log_info "开始执行代码上传流程"
     
     # 2. 交互式确认代码来源
-    read -p "是否从 ~/rpmbuild 目录上传代码？(y/yes/其他跳过): " choice
+    read -e -p "是否从 ~/rpmbuild 目录上传代码？(y/yes/其他跳过): " choice
     choice=$(echo "$choice" | tr '[:upper:]' '[:lower:]')
     
     if [[ "$choice" =~ ^(y|yes)$ ]]; then

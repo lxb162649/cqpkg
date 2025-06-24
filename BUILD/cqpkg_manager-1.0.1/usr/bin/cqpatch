@@ -102,7 +102,7 @@ generate_patch_and_modify_spec() {
     log_info "修改完成后输入补丁文件名继续..."
     
     local patch_name
-    read -p "请输入补丁文件名（例：cqos-func-add-chinese-man-page.patch）: " patch_name
+    read -e -p "请输入补丁文件名（例：cqos-func-add-chinese-man-page.patch）: " patch_name
     if [ -z "$patch_name" ]; then
         log_error "补丁文件名不能为空"
         exit 1
@@ -205,7 +205,7 @@ generate_patch_and_modify_spec() {
     local user_email=$(git config --global user.email)
     
     if [ -z "$user_name" ]; then
-        read -p "请设置用户名: " user_name
+        read -e -p "请设置用户名: " user_name
         if [ -z "$user_name" ]; then
             log_error "用户名不能为空"
             exit 1
@@ -214,7 +214,7 @@ generate_patch_and_modify_spec() {
     fi
     
     if [ -z "$user_email" ]; then
-        read -p "请设置邮箱: " user_email
+        read -e -p "请设置邮箱: " user_email
         if [ -z "$user_email" ]; then
             log_error "邮箱不能为空"
             exit 1
