@@ -275,10 +275,10 @@ main() {
     fi
     
     # 获取仓库类型
-    read -p "请选择仓库类型（a=欧拉, b=龙蜥, 其他=CQ内部仓库）: " REPO_TYPE
+    read -e -p "请选择仓库类型（a=欧拉, b=龙蜥, 其他=CQ内部仓库）: " REPO_TYPE
     
     # 获取分支名
-    read -p "请输入克隆分支（默认 $DEFAULT_BRANCH）: " input_branch
+    read -e -p "请输入克隆分支（默认 $DEFAULT_BRANCH）: " input_branch
     if [[ -n "$input_branch" ]]; then
         CLONE_BRANCH="$input_branch"
     fi
@@ -286,7 +286,7 @@ main() {
     PKG_PATH="$(pwd)/$PKG_NAME"
     
     # 是否创建rpmbuild目录
-    read -p "是否将代码放入$HOME/rpmbuild目录（输入y放入此目录，默认放到 $PKG_PATH 目录）: " CREATE_RPMBUILD_DIR
+    read -e -p "是否将代码放入$HOME/rpmbuild目录（输入y放入此目录，默认放到 $PKG_PATH 目录）: " CREATE_RPMBUILD_DIR
     
     # 设置工作路径
     if [[ "$CREATE_RPMBUILD_DIR" == "y" ]]; then
