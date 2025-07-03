@@ -1,15 +1,13 @@
 %global debug_package %{nil}
 
-Name:           cqpkg_manager
-Version:        1.0.1
-Release:        3
+Name:           cqpkg
+Version:        2.0.0
+Release:        1
 Summary:        Manage CQ system software packages.
 
 License:        GPLv3+
 URL:            https://github.com/lxb162649/cqpkg
 Source0:        %{name}-%{version}.tar.gz
-Patch0:   		cqos-func-add-cqpkg.patch
-Patch1:   cqos-fix-read-add-e.patch
 
 Requires:  git 
 Requires:  yum-utils
@@ -25,13 +23,24 @@ This project is mainly used to manage the CQ system software package.
 %build
 
 %install
-make install DESTDIR=$RPM_BUILD_ROOT
+mkdir -p %{buildroot}/%{_datadir}/%{name}
+cp -r %{_builddir}/%{name}-%{version}/* %{buildroot}/%{_datadir}/%{name}
+
+mkdir -p %{buildroot}/%{_bindir}
+ln -s %{_datadir}/%{name}/bin/cqpkg %{buildroot}/usr/bin/cqpkg
+
+mkdir -p %{buildroot}/%{_mandir}/zh_CN/man1
+install -p -D -m 644 %{_builddir}/%{name}-%{version}/share/man/zh_CN/man1/* %{buildroot}/%{_mandir}/zh_CN/man1/
 
 %files
-%{_bindir}/*
+%{_bindir}/cqpkg
+%{_datadir}/%{name}/*
 %{_mandir}/zh_CN/man1/*
 
 %changelog
+* Tue Jun 24 2025 lixuebing <lixuebing@cqsoftware.com.cn> - 2.0.0-1
+- 升级版本到2.0.0
+
 * Tue Jun 24 2025 lixuebing <lixuebing@cqsoftware.com.cn> - 1.0.1-3
 - 增加 read 命令的 -e 参数
 
