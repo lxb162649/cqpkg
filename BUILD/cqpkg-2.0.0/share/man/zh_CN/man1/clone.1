@@ -1,0 +1,41 @@
+.\" 请勿修改此文件！它是为cqpkg_manager生成的
+.TH CLONE "1" "2025-06-16" "cqpkg_manager" "用户命令"
+.SH 名称
+clone \- 从指定仓库克隆软件包源码并配置RPM构建环境
+.SH 简介
+.B clone
+\fI\,包名\/\fR
+.SH 说明
+.\" 在此处添加任何其他描述
+.PP
+从指定仓库克隆软件包源码并自动配置RPM构建环境，支持欧拉（OpenEuler）、龙蜥（Anolis OS）和CQ内部仓库，生成包含开源协议和上游信息的SOURCEINFO.yaml元数据文件。
+.SS "操作流程"
+.TP
+1. 输入仓库类型（a=欧拉, b=龙蜥, 其他=CQ内部仓库）
+.TP
+2. 输入分支名（默认：master）
+.TP
+3. 自动克隆代码
+.TP
+4. 配置/root/rpmbuild目录结构（y/n）
+.TP
+5. 生成SOURCEINFO.yaml（欧拉/龙蜥仓库）
+.SS "参数说明"
+.TP
+\fB包名\fR
+必需，软件包名称（如：httpd）
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+显示此帮助信息
+.SH 作者
+Xuebing Li
+.SH "报告错误"
+发送邮箱至 \fIlixuebing@cqsoftware.com.cn\fR
+.SH 版权
+版权 \(co 2025 CQ Software.
+.br
+本软件按MIT许可证发布
+.SH "参见"
+.B upload(1), compile(1)
+.br
+官方文档: https://github.com/lxb162649/cqpkg
