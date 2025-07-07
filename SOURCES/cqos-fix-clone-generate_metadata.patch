@@ -1,0 +1,31 @@
+diff -Nuar cqpkg-2.0.0/modules/clone.sh cqpkg-2.0.0-diff/modules/clone.sh
+--- cqpkg-2.0.0/modules/clone.sh	2025-07-07 14:14:38.221304288 +0800
++++ cqpkg-2.0.0-diff/modules/clone.sh	2025-07-07 14:18:36.766048283 +0800
+@@ -46,12 +46,9 @@
+ # 生成元数据文件
+ generate_metadata() {
+     cd "$WORK_PATH"
+-    
+-    local NEW_SPEC_FILE="${SPEC_FILE%.spec}-new.spec"
+-    rpmspec -P "$SPEC_FILE" > "$NEW_SPEC_FILE"
+-    local url=$(awk '/^(URL|Url):/ {print $2}' "$NEW_SPEC_FILE")
+-    local license=$(grep -oP 'License:\s*\K.*' "$NEW_SPEC_FILE" | tr '\n' ' ')
+-    rm -f "$NEW_SPEC_FILE"
++    local SPEC_FILE=$(ls $PKG_PATH/SPECS/*.spec)
++    local url=$(awk '/^(URL|Url):/ {print $2}' "$SPEC_FILE" | head -n 1)
++    local license=$(awk '/^License:/ {print $2}' "$SPEC_FILE" | head -n 1)
+     # 确定上游仓库URL
+     local upstream_url
+     if [[ "$repo_type" == "a" ]]; then
+@@ -71,7 +68,10 @@
+   src: ${url:-"未指定上游地址"}
+ EOF
+ 
+-    log_info "元数据文件生成完成 $(pwd)/SOURCEINFO.yaml"
++    log_success "元数据文件生成完成 $(pwd)/SOURCEINFO.yaml"
++    log_info "查看元数据文件内容: "
++    cat $(pwd)/SOURCEINFO.yaml
++    log_info "请根据需要判断是否修改元数据文件内容"
+     return 0
+ }
+ 
