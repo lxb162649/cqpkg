@@ -2,7 +2,7 @@
 
 Name:           cqpkg
 Version:        2.0.0
-Release:        3
+Release:        4
 Summary:        Manage CQ system software packages.
 
 License:        GPLv3+
@@ -10,6 +10,7 @@ URL:            https://github.com/lxb162649/cqpkg
 Source0:        %{name}-%{version}.tar.gz
 Patch0:         cqos-fix-clone-generate_metadata.patch
 Patch1:         cqos-fix-compile.patch
+Patch2:         cqpkg-fix-generate_metadata.patch
 
 Requires:  git 
 Requires:  yum-utils
@@ -40,6 +41,9 @@ install -p -D -m 644 %{_builddir}/%{name}-%{version}/share/man/zh_CN/man1/* %{bu
 %{_mandir}/zh_CN/man1/*
 
 %changelog
+* Wed Jul 09 2025 lixuebing <lixuebing@cqsoftware.com.cn> - 2.0.0-4
+- 修复 generate_metadata 函数
+
 * Wed Jul 09 2025 lixuebing <lixuebing@cqsoftware.com.cn> - 2.0.0-3
 - 修复compile
 
