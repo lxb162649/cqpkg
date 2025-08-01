@@ -1,0 +1,111 @@
+diff --git a/modules/compile.sh b/modules/compile.sh
+index ef008ef..6c261fe 100644
+--- a/modules/compile.sh
++++ b/modules/compile.sh
+@@ -1,24 +1,57 @@
++# 配置本地yum源（包含所有子目录）
++setup_local_repo() {
++    # 临时yum源配置文件
++    local local_repo="/etc/yum.repos.d/local_kyotocabinet.repo"
++    # 查找所有RPM子目录（noarch/x86_64/sw_64等）
++    local rpm_dirs=$(find "$RPM_DIR" -maxdepth 1 -type d ! -name "$(basename "$RPM_DIR")" -print0 | tr '\0' ' ')
++    
++    # 创建repo文件
++    cat > "$LOCAL_REPO" <<EOF
++[local-kyotocabinet]
++name=Local Kyotocabinet RPMs
++baseurl=$(echo "$rpm_dirs" | sed 's/ /\n        file:\/\//g' | sed 's/^/file:\/\//')
++enabled=1
++gpgcheck=0
++priority=1
++EOF
++    echo "已配置本地RPM源，包含目录: $rpm_dirs"
++}
++
++# 清理临时yum源
++cleanup_local_repo() {
++    if [ -f "$LOCAL_REPO" ]; then
++        rm -f "$LOCAL_REPO"
++        echo "已清理本地源配置"
++    fi
++}
++
++# module_install函数（增强版）
+ module_install() {
+-    local rpm_file_path=$1
+-    local rpm_file=$(basename $rpm_file_path)
+-    local rpm_pkg=$(echo ${rpm_file%%-[0-9]*})
+-    local local_rpm_file=$(rpm -q "$rpm_pkg")
+-    local install_type=""
++    local rpm_path="$1"
++    
++    # 检查包是否存在
++    if [ ! -f "$rpm_path" ]; then
++        echo "错误：RPM包 $rpm_path 不存在"
++        return 1
++    fi
+ 
+-    if [ "$rpm_file" == "$(echo "$local_rpm_file.rpm")" ]; then
+-        install_type="reinstall"
+-        log_action "✓ $rpm_pkg 已安装,正在重新安装..."
+-    else
+-        install_type="install"
+-        log_action "✗ $rpm_pkg 未安装，正在安装..."
++    # 提取包名和版本
++    local pkg_name=$(rpm -qp --queryformat '%{NAME}' "$rpm_path" 2>/dev/null)
++    local pkg_version=$(rpm -qp --queryformat '%{VERSION}-%{RELEASE}' "$rpm_path" 2>/dev/null)
++    
++    if [ -z "$pkg_name" ] || [ -z "$pkg_version" ]; then
++        echo "错误：无法解析RPM包信息 $rpm_path"
++        return 1
+     fi
+-    if ! yum $install_type -y "$rpm_file_path" &> tmp.txt; then
+-        cat tmp.txt
+-        log_warn "$rpm_pkg 安装失败!"
++
++    # 检查是否已安装同版本
++    if rpm -q "$pkg_name" --quiet --version "$pkg_version"; then
++        echo "执行重装: $pkg_name-$pkg_version"
++        yum -y reinstall "$rpm_path"
+     else
+-        log_success "$rpm_pkg 安装成功!"
++        echo "执行安装: $pkg_name-$pkg_version"
++        yum -y install "$rpm_path"
+     fi
+-    rm tmp.txt
+ }
+ 
+ module_rpmbuild(){
+@@ -67,6 +100,14 @@ module_compile() {
+             module_install "$(find $RPM_DIR -name "*.rpm")"
+             get_man_page_pkgs
+         fi
++        
++        # 配置本地源
++        setup_local_repo
++
++        # 刷新yum缓存
++        yum clean all >/dev/null
++        yum makecache fast >/dev/null
++
+         log_info "\n构建结果："
+         for arch in noarch x86_64 sw_64; do
+             local arch_dir="$RPM_DIR/$arch"
+@@ -80,6 +121,9 @@ module_compile() {
+                         local rpm_pkg=$(echo ${rpm_file%%-[0-9]*})
+                         
+                         if printf "%s\n" "${man_page_pkgs[@]}" | grep -q "^$rpm_pkg$"; then
++                            if [ "$rpm_file_path" != "$main_pkg_rpm_file_path" ]; then
++                                module_install "$rpm_file_path"
++                            fi
+                             log_info "$rpm_pkg 包含的 man 手册如下："
+                             rpm -ql "$rpm_pkg" | grep /usr/share/man
+                             en_man_num=$(rpm -ql "$rpm_pkg" | grep /usr/share/man/man | wc -l)
+@@ -101,5 +145,7 @@ module_compile() {
+             fi
+             echo
+         done
++        # 清理
++        cleanup_local_repo
+     fi
+ }
