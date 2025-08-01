@@ -159,8 +159,11 @@ module_clone() {
 
     log_info "工作路径设置为: $WORK_PATH"
 
-    rm -rf "$PKG_PATH"  # 删除原有的PKG_PATH目录
-    log_info "已删除原有的 $PKG_PATH 目录"
+    if [[ -d "$PKG_PATH" ]]; then
+        rm -rf "$PKG_PATH"  # 删除原有的PKG_PATH目录
+        log_info "已删除原有的 $PKG_PATH 目录"
+    fi
+
     if [[ -d "$WORK_PATH" ]]; then
         rm -rf "$WORK_PATH"
         log_info "已清理旧工作路径 $WORK_PATH"

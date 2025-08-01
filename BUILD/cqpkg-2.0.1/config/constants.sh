@@ -4,6 +4,8 @@ source "$BASE_DIR/lib/utils.sh"
 
 # 加载功能模块
 source "$BASE_DIR/modules/clone.sh"
+source "$BASE_DIR/modules/extract.sh"
+source "$BASE_DIR/modules/translator.sh"
 source "$BASE_DIR/modules/patch.sh"
 source "$BASE_DIR/modules/compile.sh"
 source "$BASE_DIR/modules/upload.sh"
@@ -29,3 +31,11 @@ WORK_PATH=""
 
 src_diff_path=""
 patch_path=""
+
+# man
+MAN_TMP_PATH=""
+
+man_page_pkgs=()
+man_file_paths=()
+MAN_TMP_PATH_BAK=""
+translating_file=""

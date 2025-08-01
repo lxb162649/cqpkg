@@ -35,7 +35,11 @@ function add_patch_application() {
 module_patch() {
     SPEC_FILE_BAK="$SPEC_FILE.bak"
     cp -f "$SPEC_FILE" "$SPEC_FILE_BAK"
-    
+    local man_flg=$(read -e -p "是否为man手册打补丁？(y/n)(默认否): " && [[ -n "$REPLY" ]] && echo "$REPLY" || echo "n")
+    if [[ "$man_flg" == "y" ]] && [[ -d "$MAN_TMP_PATH" ]]; then
+        MAN_TMP_PATH_BAK=$MAN_TMP_PATH.bak
+        cp -rf "$MAN_TMP_PATH" "$MAN_TMP_PATH_BAK"
+    fi
     rpmspec -P $SPEC_FILE > $NEW_SPEC_FILE
     ############################## 生成补丁 ##############################
     log_action "正在生成补丁..."
@@ -51,7 +55,7 @@ module_patch() {
         local src_name_gz=$(basename "$src_url")
         if ! ls $SOURCES_DIR/$src_name_gz &> /dev/null; then
             log_action "正在下载源码: $src_name_gz ..."
-            if ! wget $src_url -P $SOURCES_DIR &> /dev/null; then
+            if ! wget $src_url -O $SOURCES_DIR/$(basename $src_url) &> /dev/null; then
                 log_error "下载源码失败: $src_name_gz"
                 handle_interrupt
             fi
@@ -79,20 +83,50 @@ module_patch() {
     rm -rf "$src_diff_path"
     cp -rf $src_path $src_diff_path
 
-    log_action "请手动修改目录: $src_diff_path ..."
-    log_info "修改完成后输入补丁文件名继续"
-    
-    local patch_name
-    while [ -z "$patch_name" ]; do
-        read -e -p "请输入补丁文件名（例：cqos-func-add-chinese-man-page.patch）: " patch_name
-        if [ -z "$patch_name" ]; then
-            log_warn "补丁文件名不能为空!"
-            log_info "请重新输入补丁文件名"
-        else
-            log_info "已输入补丁文件名: $patch_name"
-            break
+    if [[ "$man_flg" == "y" ]] && [[ -d "$MAN_TMP_PATH" ]]; then
+        # 移动中文手册页
+        cd $src_diff_path
+        local zh_man_dir="$src_diff_path/man/zh_CN"
+        local man_sections=()
+
+        local -a sections=()
+        for section in {1..8}; do
+            sections+=($section)
+            sections+=($section"pm")
+        done
+        
+        # 获取手册节点
+        for section in "${sections[@]}"; do
+            local man_files="${MAN_TMP_PATH}/*.$section"
+            if ls $man_files > /dev/null 2>&1; then
+                mkdir -p "$zh_man_dir/man$(echo "$section" | grep -o '[0-9]\+')"
+                mv $man_files "$zh_man_dir/man$(echo "$section" | grep -o '[0-9]\+')/"
+                man_sections+=($section)
+                log_info "已添加 section $section 的中文手册"
+            fi
+        done
+
+        if [ ${#man_sections[@]} -eq 0 ]; then
+            log_warn "man_sections 数组为空，删除目录 $src_diff_path 并退出"
+            handle_interrupt
         fi
-    done
+        local patch_name="cqos-func-add-chinese-man-page.patch"
+    else
+        log_action "请手动修改目录: $src_diff_path ..."
+        log_info "修改完成后输入补丁文件名继续"
+        
+        local patch_name
+        while [ -z "$patch_name" ]; do
+            read -e -p "请输入补丁文件名（例：cqos-func-add-chinese-man-page.patch）: " patch_name
+            if [ -z "$patch_name" ]; then
+                log_warn "补丁文件名不能为空!"
+                log_info "请重新输入补丁文件名"
+            else
+                log_info "已输入补丁文件名: $patch_name"
+                break
+            fi
+        done
+    fi
     
     # 生成补丁
     cd "$BUILD_DIR"
@@ -111,7 +145,7 @@ module_patch() {
     # 循环提示直到用户输入非空内容或明确确认
     while grep -m1 -B9999 '^%changelog' "$SPEC_FILE" | grep -E 'anolis_release|rhel|fedora'; do
         log_warn "$SPEC_FILE 文件含有无效宏，请删除..."
-        read -e -p "删除无效宏了吗？如已删除请按回车（如需更改release，release不用+1）（无需删除时输入q退出）: " reply
+        read -e -p "删除无效宏了吗？如已删除请按回车（输入q退出）: " reply
         if [ "$reply" == "q" ]; then
             log_info "此处无需删除，退出循环！"
             break
@@ -133,7 +167,7 @@ module_patch() {
 
     local new_patch=""
     if [ $new_patch_num == 0 ]; then
-        local last_source_head=$(grep '^Source' $SPEC_FILE | tail -n 1 | cut -d':' -f1 || { log_error "$SPEC_FILE 文件内在无patch情况下未找到Source开头行！"; handle_interrupt;})
+        local last_source_head=$(grep '^Source' $SPEC_FILE | tail -n 1 | cut -d':' -f1 || { log_error "$SPEC_FILE 文件内在无patch情况下未找到Source开头行！"; handle_interrupt; })
         
         local last_source=$(grep '^Source' $SPEC_FILE | tail -n 1)
         
@@ -168,6 +202,69 @@ module_patch() {
         add_patch_application "^%patch${patch_num}"
     fi
 
+    if [[ "$man_flg" == "y" ]] && [[ -d "$MAN_TMP_PATH" ]]; then
+        # 获取安装命令
+        local install_commands=""
+        local last_index=$((${#man_sections[@]} - 1))
+
+        local man_message="{"
+        if [ "${man_sections[0]}" = "${man_sections[$last_index]}" ]; then
+            man_message="man$(echo ${man_sections[0]} | grep -o '[0-9]\+')"
+        else
+            for i in "${!man_sections[@]}"; do
+                local section="${man_sections[$i]}"
+                # 提取数字部分
+                local number=$(echo "$section" | grep -o '[0-9]\+')
+                
+                if [ $i -eq $last_index ]; then
+                    # 最后一个元素不添加逗号
+                    man_message+="man$number}"
+                else
+                    # 非最后一个元素添加逗号
+                    man_message+="man$number,"
+                fi
+            done
+        fi
+        
+        install_commands+="mkdir -p \$RPM_BUILD_ROOT%{_mandir}/zh_CN/$man_message\n"
+
+        for section in "${man_sections[@]}"; do
+            install_commands+="install -p -D -m 644 %{_builddir}/$pkg_name-%{version}/man/zh_CN/man$(echo "$section" | grep -o '[0-9]\+')/*.$section \$RPM_BUILD_ROOT%{_mandir}/zh_CN/man$(echo "$section" | grep -o '[0-9]\+')/\n"
+        done
+
+        # 查找 %install 部分并添加安装命令
+        if grep -q '^%install' "$SPEC_FILE"; then
+            sed -i "/^%install/a$install_commands" "$SPEC_FILE"
+            echo "$(grep '%install' "$SPEC_FILE")"
+            echo "添加如下"
+            echo -e "$install_commands"
+            echo "-------------------"
+        fi
+
+        # 添加 %files 部分
+        # spec 文件中 %{_mandir} 行信息（用于修改spec文件）
+        local mandir_messages=()
+        # 先提取第一个%files到第一个%changelog之间的内容，再搜索%{_mandir}
+        readarray -t mandir_messages < <(sed -n '/^%files/,/^%changelog/ { /^%changelog/! p }' "$SPEC_FILE" | grep '%{_mandir}')
+
+        # 处理每个 mandir 路径
+        for mandir_message in "${mandir_messages[@]}"; do
+            # 在第一个斜杠后添加 zh_CN/
+            local new_mandir_message=$(echo "$mandir_message" | sed 's/%{_mandir}/%{_mandir}\/zh_CN/g')
+            if [[ "$mandir_message" == *zh_CN* ]] || grep -qxF "$new_mandir_message" "$SPEC_FILE"; then
+                continue
+            fi
+            awk -v old="$mandir_message" -v new="$new_mandir_message" '
+            $0 == old {print; print new; next}
+            1
+            ' "$SPEC_FILE" > tmp && mv tmp "$SPEC_FILE"
+
+            echo -e "${mandir_message}"
+            echo "添加如下:"
+            echo -e "${new_mandir_message}"
+            echo "-------------------"
+        done
+    fi
     # 提取 Epoch
     local epoch=$(grep '^Epoch:' "$NEW_SPEC_FILE" | head -n 1 | sed 's/^Epoch:\s*//')
 

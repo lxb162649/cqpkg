@@ -29,6 +29,7 @@ main() {
     SPEC_FILE=$(ls $SPECS_DIR/*.spec)
 
     NEW_SPEC_FILE="$SPEC_FILE-new"
+    MAN_TMP_PATH="$SOURCES_DIR/man"
     
     # 主流程
     log_action "开始对包 $PKG 处理"
@@ -40,6 +41,12 @@ main() {
     case "$ACTION" in
         clone)
             module_clone
+            ;;
+        extract)
+            module_extract
+            ;;
+        translator)
+            module_translator
             ;;
         patch)
             module_patch
