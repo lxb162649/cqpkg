@@ -18,6 +18,7 @@ install:
 	mkdir -p $(TARGET_DIR)
 	# 复制BUILD下的文件到目标目录
 	cp -rf $(SCRIPT_DIR)/../BUILD/*/* $(TARGET_DIR)/
+	@sed -i 's|^BASE_DIR="/usr/share/cqpkg"|BASE_DIR="\$$HOME/.cqpkg"|' $(TARGET_DIR)/bin/cqpkg
 	# 仅在环境变量未添加时写入（避免重复）
 	@if ! grep -qxF $(PATH_ENTRY) $(BASHRC); then \
 		echo $(PATH_ENTRY) >> $(BASHRC); \
