@@ -19,24 +19,5 @@ module_upload() {
     log_action "正在推送代码到远程仓库..."
     git push -uf origin $branch
 
-    # 执行备份（仅当存在RPM文件时）
-    if [ "$(ls -A RPMS 2>/dev/null)" ]; then
-        log_action "创建备份到 ../success/RPMS"
-        local backup_dir="../success/RPMS"
-        mkdir -p $backup_dir/{noarch,x86_64}
-        
-        # 备份noarch架构包
-        if ls -1 $PKG_PATH/RPMS/noarch/*.rpm &> /dev/null; then
-            cp -v $PKG_PATH/RPMS/noarch/*.rpm "$backup_dir/noarch/"
-        fi
-        
-        # 备份x86_64架构包
-        if ls -1 $PKG_PATH/RPMS/x86_64/*.rpm &> /dev/null; then
-            cp -v $PKG_PATH/RPMS/x86_64/*.rpm "$backup_dir/x86_64/"
-        fi
-    else
-        log_warn "警告：未找到RPM文件，跳过备份"
-    fi
-
     log_success "操作完成！代码已推送至 $branch 分支"
 }
