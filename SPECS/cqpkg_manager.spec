@@ -2,13 +2,14 @@
 
 Name:           cqpkg
 Version:        2.0.1
-Release:        2
+Release:        3
 Summary:        Manage CQ system software packages.
 
 License:        GPLv3+
 URL:            https://github.com/lxb162649/cqpkg
 Source0:        %{name}-%{version}.tar.gz
 Patch0:         cqos-fix-install.patch
+Patch1:         cqos-fix-local_repo.patch
 
 Requires:  git 
 Requires:  yum-utils
@@ -39,6 +40,9 @@ install -p -D -m 644 %{_builddir}/%{name}-%{version}/share/man/zh_CN/man1/* %{bu
 %{_mandir}/zh_CN/man1/*
 
 %changelog
+* Mon Aug 04 2025 lixuebing <lixuebing@cqsoftware.com.cn> - 2.0.1-3
+- 修复配置本地yum源的问题
+
 * Fri Aug 01 2025 lixuebing <lixuebing@cqsoftware.com.cn> - 2.0.1-2
 - 修复安装问题
 
