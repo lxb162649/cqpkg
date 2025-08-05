@@ -104,7 +104,7 @@ gitlab_authentication() {
     if [[ -z "$HOME/.git-credentials" ]]; then
         touch "$HOME/.git-credentials"
     fi
-    if grep -q "192.168.10.152" "$HOME/.git-credentials"; then
+    if ! grep -q "192.168.10.152" "$HOME/.git-credentials"; then
         log_warn "未进行身份验证，请验证"
         gitlab_user=$(read -e -p "请输入gitlab用户名: " reply)
         gitlab_password=$(read -e -p "请输入gitlab密码: " reply)
@@ -117,7 +117,7 @@ gitee_authentication() {
     if [[ -z "$HOME/.git-credentials" ]]; then
         touch "$HOME/.git-credentials"
     fi
-    if grep -q "gitee" "$HOME/.git-credentials"; then
+    if ! grep -q "gitee" "$HOME/.git-credentials"; then
         log_warn "未进行身份验证，请验证"
         gitee_user=$(read -e -p "请输入gitee用户名: " reply)
         gitee_password=$(read -e -p "请输入gitee密码: " reply)
