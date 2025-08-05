@@ -172,6 +172,7 @@ module_clone() {
     # 根据仓库类型克隆
     case "$repo_type" in
         a)
+            gitee_authentication
             local upstream_url="https://gitee.com/src-openeuler/${PKG}.git"
             if ! git clone -b "$branch" "$upstream_url"; then
                 log_error "${PKG}仓库克隆失败！"
@@ -180,6 +181,7 @@ module_clone() {
             log_success "${PKG}克隆成功！"
             ;;
         b)
+            gitee_authentication
             local upstream_url="https://gitee.com/src-anolis-os/${PKG}.git"
             if ! git clone -b "$branch" "$upstream_url"; then
                 log_error "${PKG}克隆失败！"
@@ -188,6 +190,7 @@ module_clone() {
             log_success "${PKG}克隆成功！"
             ;;
         *)
+            gitlab_authentication
             clone_cq_repo
             log_success "${PKG}克隆成功！"
             
