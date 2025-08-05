@@ -153,10 +153,10 @@ get_man_page_pkgs() {
     
     # 展开 spec 文件中的宏定义（目的：方便获取子包名）
     rpmspec -P $SPEC_FILE > $NEW_SPEC_FILE
+    local main_pkg=("$(grep '^Name:' "$NEW_SPEC_FILE" | sed 's/^Name:\s*//')")
+    
     sed -n '/^%install/,/^%changelog/p' $NEW_SPEC_FILE > tmp.spec
     mv -f tmp.spec $NEW_SPEC_FILE
-
-    local main_pkg=("$(grep '^Name:' "$NEW_SPEC_FILE" | sed 's/^Name:\s*//')")
 
     # spec 文件中 %files 行信息（用于查询含有man手册的包）
     local files_messages=()
