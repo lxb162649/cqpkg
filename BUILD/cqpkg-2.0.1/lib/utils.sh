@@ -106,8 +106,8 @@ gitlab_authentication() {
     fi
     if ! grep -q "192.168.10.152" "$HOME/.git-credentials"; then
         log_warn "未进行身份验证，请验证"
-        gitlab_user=$(read -e -p "请输入gitlab用户名: " reply)
-        gitlab_password=$(read -e -p "请输入gitlab密码: " reply)
+        gitlab_user=$(read -e -p "请输入gitlab用户名: " && [[ -n "$REPLY" ]] && echo "$REPLY")
+        gitlab_password=$(read -e -p "请输入gitlab密码: " && [[ -n "$REPLY" ]] && echo "$REPLY")
         echo "https://$gitlab_user:$gitlab_password@192.168.10.152" >> "$HOME/.git-credentials"
     fi
     git config --global credential.helper store
