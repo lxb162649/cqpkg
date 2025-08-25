@@ -95,6 +95,9 @@ clone_cq_repo() {
     # CQ内部仓库列表（按优先级排序）
     local cq_repos=(
         "http://192.168.10.152/cyos-security/public/$PKG.git"
+        "http://192.168.10.152/cyos-security/public/openstack/$PKG.git"
+        "http://192.168.10.152/cyos-security/public/xfce/$PKG.git"
+        "http://192.168.10.152/cyos-security/public/openstack/openstack-requires/$PKG.git"
         "http://192.168.10.152/cyos-security/protected/$PKG.git"
         "http://192.168.10.152/cyos-security/private/$PKG.git"
         "http://192.168.10.152/cyos-security/trash/$PKG.git"
