@@ -108,7 +108,7 @@ gitlab_authentication() {
         log_warn "未进行身份验证，请验证"
         gitlab_user=$(read -e -p "请输入gitlab用户名: " && [[ -n "$REPLY" ]] && echo "$REPLY")
         gitlab_password=$(read -e -p "请输入gitlab密码: " && [[ -n "$REPLY" ]] && echo "$REPLY")
-        echo "https://$gitlab_user:$gitlab_password@192.168.10.152" >> "$HOME/.git-credentials"
+        echo "http://$gitlab_user:$gitlab_password@192.168.10.152" >> "$HOME/.git-credentials"
     fi
     git config --global credential.helper store
 }
@@ -119,8 +119,8 @@ gitee_authentication() {
     fi
     if ! grep -q "gitee" "$HOME/.git-credentials"; then
         log_warn "未进行身份验证，请验证"
-        gitee_user=$(read -e -p "请输入gitee用户名: " reply)
-        gitee_password=$(read -e -p "请输入gitee密码: " reply)
+        gitee_user=$(read -e -p "请输入gitee用户名: " && [[ -n "$REPLY" ]] && echo "$REPLY")
+        gitee_password=$(read -e -p "请输入gitee密码: " && [[ -n "$REPLY" ]] && echo "$REPLY")
         echo "https://$gitee_user:$gitee_password@192.168.10.152" >> "$HOME/.git-credentials"
     fi
     git config --global credential.helper store
