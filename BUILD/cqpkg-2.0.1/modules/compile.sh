@@ -114,12 +114,16 @@ module_compile() {
         fi  
     done
 
-    log_action "正在安装编译依赖..."
-    if ! yum builddep -y $SPEC_FILE; then
-        log_error "安装依赖失败"
-        handle_interrupt
+    if [ $(whoami) == "root" ]; then
+        log_action "正在安装编译依赖..."
+        if ! yum builddep -y $SPEC_FILE; then
+            log_error "安装依赖失败"
+            handle_interrupt
+        fi
+        log_success "安装编译依赖成功！"
+    else
+        log_warn "非root用户无法安装编译依赖，跳过"
     fi
-    log_success "安装编译依赖成功！"
 
     log_action "开始构建RPM包..."
 
