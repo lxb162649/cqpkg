@@ -1,14 +1,9 @@
 # 目录
 
 - [简介](#简介)
-- [引入说明](#引入说明)
 - [使用场景](#使用场景)
 - [常见用法](#常见用法)
-- [修改及适配](#修改及适配)
-	- [长擎定制修改](#长擎定制修改)
-	- [适配其他系统](#适配其他系统)
 - [注意事项](#注意事项)
-- [参考链接](#参考链接)
 
 # 简介
 
@@ -24,17 +19,19 @@
 
 # 用户安装
 ```bash
-git clone http://192.168.10.152/lixuebing/cqpkg_manager.git
-cd cqpkg_manager/SOURCES
+git clone https://github.com/lxb162649/cqpkg.git
+cd cqpkg/SOURCES
 make install
+cd -
 ```
 
 # root安装
 ```bash
-git clone http://192.168.10.152/lixuebing/cqpkg_manager.git
-cd cqpkg_manager
+git clone https://github.com/lxb162649/cqpkg.git
+cd cqpkg
 rpmbuild -ba -D "_topdir `pwd`" SPECS/*.spec
 yum install -y "$(find RPMS -name *.rpm)"
+cd -
 ```
 
 # 常见用法
@@ -44,10 +41,8 @@ yum install -y "$(find RPMS -name *.rpm)"
 # 查看帮助信息
 cqpkg -h
 
-# 当前目录不存在sos，选项任意
+# 当前目录不存在sos
 cqpkg sos 
-cqpkg sos -a
-cqpkg sos -b
 
 # 当前目录存在sos
 cqpkg sos -cl
@@ -90,16 +85,9 @@ cqpkg sos -u
 cqpkg sos -mr
 ```
 
-# 修改及适配
-
-该项目为自研项目
-
 # 注意事项
 
 - 如果参数想用包名而不使用路径，需要此包在当前目录下。
 - 龙蜥或欧拉的隐藏文件可能会缺失。
 - 如果当前编译生成的rpm包版本小于yum仓库里的包版本，则在检查man手册是否安装成功时不能安装编译生成rpm包，需手动处理
 
-# 参考链接
-
-- [cqpkg_manager 官方网站](https://github.com/lxb162649/cqpkg)
